@@ -1,0 +1,63 @@
+{
+  "name": "@mdv/workout-tracker-core",
+  "version": "0.1.0",
+  "private": false,
+  "description": "Local database core for exercises, workout templates, workout sessions, and session logs.",
+  "license": "UNLICENSED",
+  "main": "index.ts",
+  "types": "index.ts",
+  "react-native": "index.ts",
+  "files": [
+    "adapters",
+    "db",
+    "repositories",
+    "sync",
+    "sql",
+    "index.ts",
+    "types.ts",
+    "README.md",
+    "CHANGELOG.md"
+  ],
+  "exports": {
+    ".": {
+      "react-native": "./index.ts",
+      "types": "./index.ts",
+      "default": "./index.ts"
+    },
+    "./db": {
+      "react-native": "./db/index.ts",
+      "types": "./db/index.ts",
+      "default": "./db/index.ts"
+    },
+    "./adapters": {
+      "react-native": "./adapters/index.ts",
+      "types": "./adapters/index.ts",
+      "default": "./adapters/index.ts"
+    },
+    "./repositories": {
+      "react-native": "./repositories/index.ts",
+      "types": "./repositories/index.ts",
+      "default": "./repositories/index.ts"
+    },
+    "./sync": {
+      "react-native": "./sync/index.ts",
+      "types": "./sync/index.ts",
+      "default": "./sync/index.ts"
+    },
+    "./types": {
+      "types": "./types.ts",
+      "default": "./types.ts"
+    },
+    "./package.json": "./package.json"
+  },
+  "peerDependencies": {
+    "@op-engineering/op-sqlite": ">=15",
+    "react": ">=18",
+    "react-native": ">=0.72"
+  },
+  "peerDependenciesMeta": {
+    "@op-engineering/op-sqlite": {
+      "optional": true
+    }
+  }
+}
