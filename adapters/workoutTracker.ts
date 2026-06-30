@@ -58,6 +58,7 @@ type HydratedExercise = {
   plannedReps: number;
   weight?: number;
   restSeconds?: number | null;
+  section?: string | null;
   blockId?: number | null;
   blockType?: 'straight_sets' | 'circuit' | 'superset' | 'giant_set' | 'interval' | null;
   blockName?: string | null;
@@ -132,6 +133,7 @@ const mapSessionExercises = (session: HydratedWorkoutSession | null): HydratedEx
     plannedReps: exercise.plannedReps || 0,
     weight: exercise.weight ?? undefined,
     restSeconds: exercise.restSeconds,
+    section: exercise.section,
     blockId: exercise.blockId,
     blockType: exercise.blockType,
     blockName: exercise.blockName,

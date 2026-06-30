@@ -10,6 +10,8 @@ export const WORKOUT_TRACKER_TABLES = [
   'exercise_logs',
   'set_logs',
   'personal_records',
+  'progressive_overload_applications',
+  'progressive_overload_recommendation_snapshots',
 ] as const;
 
 export type WorkoutTrackerTableName = typeof WORKOUT_TRACKER_TABLES[number];
@@ -111,6 +113,24 @@ export const WORKOUT_TRACKER_TABLE_DEFINITIONS: Record<WorkoutTrackerTableName, 
     importOrder: 80,
     clearOrder: 5,
     syncOrder: 80,
+    primaryKey: 'id',
+    timestampColumn: 'updated_at',
+  },
+  progressive_overload_applications: {
+    name: 'progressive_overload_applications',
+    exportOrder: 90,
+    importOrder: 90,
+    clearOrder: 4,
+    syncOrder: 90,
+    primaryKey: 'id',
+    timestampColumn: 'updated_at',
+  },
+  progressive_overload_recommendation_snapshots: {
+    name: 'progressive_overload_recommendation_snapshots',
+    exportOrder: 85,
+    importOrder: 85,
+    clearOrder: 4,
+    syncOrder: 85,
     primaryKey: 'id',
     timestampColumn: 'updated_at',
   },

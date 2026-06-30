@@ -186,6 +186,7 @@ create table if not exists exercise_logs (
   superset_id int,
   group_id int,
   group_type text check (group_type in ('superset', 'drop_set', 'circuit')),
+  section text default 'main',
   notes text,
   deleted boolean not null default false,
   synced boolean not null default false,
@@ -244,6 +245,52 @@ create table if not exists personal_records (
   unique(user_id, workout_session_id, set_log_id, record_type)
 );
 
+create table if not exists progressive_overload_applications (
+  id bigint not null,
+  user_id uuid not null default auth.uid() references auth.users(id) on delete cascade,
+  workout_session_id bigint not null,
+  workout_id bigint not null,
+  exercise_id bigint not null,
+  exercise_log_id bigint,
+  set_number int not null,
+  field text not null,
+  previous_value double precision,
+  new_value double precision,
+  recommendation_type text not null,
+  reason_code text not null,
+  drop_sets_snapshot jsonb,
+  applied_at timestamptz not null default now(),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  primary key (user_id, id),
+  unique(user_id, workout_session_id, exercise_id, set_number, field)
+);
+
+create table if not exists progressive_overload_recommendation_snapshots (
+  id bigint not null,
+  user_id uuid not null default auth.uid() references auth.users(id) on delete cascade,
+  workout_session_id bigint not null,
+  exercise_id bigint not null,
+  exercise_log_id bigint not null,
+  eligible boolean not null default false,
+  reason_code text not null,
+  reason_label text not null,
+  recommendation_type text not null,
+  current_value double precision,
+  recommended_value double precision,
+  increment double precision not null default 0,
+  equipment_increment double precision not null default 0,
+  is_bodyweight boolean not null default false,
+  is_timed boolean not null default false,
+  is_block_exercise boolean not null default false,
+  has_drop_sets boolean not null default false,
+  recommendation_json jsonb not null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  primary key (user_id, id),
+  unique(user_id, workout_session_id, exercise_id, exercise_log_id)
+);
+
 create table if not exists weekly_plans (
   id text not null,
   sync_user_id uuid not null default auth.uid() references auth.users(id) on delete cascade,
@@ -287,6 +334,8 @@ create index if not exists idx_workout_tracker_exercise_logs_session on exercise
 create index if not exists idx_workout_tracker_set_logs_exercise_log on set_logs(user_id, exercise_log_id);
 create index if not exists idx_workout_tracker_personal_records_exercise on personal_records(user_id, exercise_id, achieved_at);
 create index if not exists idx_workout_tracker_personal_records_session on personal_records(user_id, workout_session_id);
+create index if not exists idx_workout_tracker_progressive_overload_session on progressive_overload_applications(user_id, workout_session_id);
+create index if not exists idx_workout_tracker_progressive_overload_snapshots_session on progressive_overload_recommendation_snapshots(user_id, workout_session_id);
 create index if not exists idx_workout_tracker_weekly_plans_owner on weekly_plans(sync_user_id);
 create index if not exists idx_workout_tracker_weekly_plan_workouts_owner on weekly_plan_workouts(sync_user_id, weekly_plan_id);
 

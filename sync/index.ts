@@ -54,11 +54,14 @@ const BOOLEAN_COLUMNS: Partial<Record<WorkoutTrackerTableName, string[]>> = {
   exercise_logs: ['deleted', 'synced'],
   set_logs: ['completed', 'deleted', 'synced'],
   personal_records: ['synced'],
+  progressive_overload_recommendation_snapshots: ['eligible', 'is_bodyweight', 'is_timed', 'is_block_exercise', 'has_drop_sets'],
 };
 
 const JSON_COLUMNS: Partial<Record<WorkoutTrackerTableName, string[]>> = {
   workout_exercise_sets: ['drop_sets'],
   set_logs: ['drop_sets'],
+  progressive_overload_applications: ['drop_sets_snapshot'],
+  progressive_overload_recommendation_snapshots: ['recommendation_json'],
 };
 
 function parseJsonValue(value: unknown, fallback: unknown) {

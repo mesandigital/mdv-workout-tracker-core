@@ -1,4 +1,4 @@
-import { execute, insert, removeWhere, selectRaw, selectRawOne, updateWhere } from '../db';
+import { execute, insert, removeWhere, selectRaw, selectRawOne, tableHasColumn, updateWhere } from '../db';
 import type { HydratedWorkoutSession, SetLogInput, WorkoutSession } from '../types';
 import { persistPersonalRecordsForSession } from './personalRecords';
 
@@ -38,6 +38,17 @@ const createSessionDropSets = (value: unknown) => parseJsonArray(value).map((dro
     completed: 0,
   };
 });
+
+const buildDefaultSets = (exercise: any) => {
+  const totalSets = Math.max(1, Math.round(Number(exercise.default_sets) || 1));
+  return Array.from({ length: totalSets }, (_, index) => ({
+    set_number: index + 1,
+    planned_reps: exercise.default_reps || 1,
+    planned_weight: exercise.weight ?? null,
+    duration_seconds: null,
+    drop_sets: [],
+  }));
+};
 
 export async function getActiveWorkoutSession(workoutId?: number) {
   if (typeof workoutId === 'number') {
@@ -91,20 +102,45 @@ export async function generateExerciseLogsAndSets(sessionId: number, workoutId: 
       planned_reps: exercise.default_reps,
       weight: exercise.weight,
       rest_seconds: exercise.rest_seconds ?? null,
+      section: exercise.section || 'main',
       order_index: exercise.order_index,
       superset_id: exercise.superset_id || null,
       group_id: exercise.group_id || exercise.superset_id || null,
       group_type: exercise.group_type || (exercise.superset_id ? 'superset' : null),
     });
 
-    const sets = await selectRaw<any>(`
-      SELECT *
-      FROM workout_exercise_sets
-      WHERE workout_exercise_id = ?
-      ORDER BY set_number ASC
-    `, [exercise.id]);
+    const supportsWorkoutExerciseId = await tableHasColumn('workout_exercise_sets', 'workout_exercise_id');
+    const supportsDeleted = await tableHasColumn('workout_exercise_sets', 'deleted');
+    const deletedFilter = supportsDeleted ? 'AND COALESCE(deleted, 0) = 0' : '';
+    let sets = supportsWorkoutExerciseId
+      ? await selectRaw<any>(`
+        SELECT *
+        FROM workout_exercise_sets
+        WHERE workout_exercise_id = ?
+          ${deletedFilter}
+        ORDER BY set_number ASC
+      `, [exercise.id])
+      : await selectRaw<any>(`
+        SELECT *
+        FROM workout_exercise_sets
+        WHERE workout_id = ?
+          AND exercise_id = ?
+          ${deletedFilter}
+        ORDER BY set_number ASC
+      `, [workoutId, exercise.exercise_id]);
+    if (sets.length === 0 && supportsWorkoutExerciseId) {
+      sets = await selectRaw<any>(`
+        SELECT *
+        FROM workout_exercise_sets
+        WHERE workout_id = ?
+          AND exercise_id = ?
+          ${deletedFilter}
+        ORDER BY set_number ASC
+      `, [workoutId, exercise.exercise_id]);
+    }
 
-    const fallbackSets = sets.length ? sets : parseTemplateSets(exercise.setsArray);
+    const templateSets = parseTemplateSets(exercise.setsArray);
+    const fallbackSets = sets.length ? sets : (templateSets.length ? templateSets : buildDefaultSets(exercise));
     const sessionSets = exercise.block_type === 'circuit' || exercise.block_type === 'superset' || exercise.block_type === 'giant_set'
       ? Array.from({ length: Math.max(1, Math.round(exercise.block_rounds || 1)) }, (_, index) => ({
         ...(fallbackSets[0] || {}),
@@ -119,13 +155,13 @@ export async function generateExerciseLogsAndSets(sessionId: number, workoutId: 
         exercise_log_id: exerciseLogId,
         set_number: set.set_number || index + 1,
         round_number: set.round_number || null,
-        planned_reps: set.planned_reps || exercise.default_reps || 1,
-        planned_duration_seconds: set.duration_seconds ?? null,
+        planned_reps: set.planned_reps || set.plannedReps || exercise.default_reps || 1,
+        planned_duration_seconds: set.duration_seconds ?? set.durationSeconds ?? null,
         duration_seconds: null,
         reps: null,
-        weight: set.planned_weight ?? exercise.weight ?? null,
+        weight: set.planned_weight ?? set.plannedWeight ?? set.weight ?? exercise.weight ?? null,
         completed: 0,
-        drop_sets: JSON.stringify(createSessionDropSets(set.drop_sets)),
+        drop_sets: JSON.stringify(createSessionDropSets(set.drop_sets || set.dropSets)),
       });
     }
   }
@@ -238,6 +274,7 @@ export async function getHydratedWorkoutSession(sessionId: number): Promise<Hydr
       el.planned_reps as plannedReps,
       el.weight,
       el.rest_seconds as restSeconds,
+      el.section,
       el.order_index as orderIndex,
       el.superset_id as supersetId,
       el.group_id as groupId,
