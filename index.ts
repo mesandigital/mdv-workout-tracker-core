@@ -1,4 +1,5 @@
 export * from './adapters';
+export * from './analytics';
 export * from './db';
 export * from './db/migrations';
 export * from './db/schema';

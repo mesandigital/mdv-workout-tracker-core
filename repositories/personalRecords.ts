@@ -5,6 +5,11 @@ import type {
   PersonalRecordHistoryPage,
   PersonalRecordExerciseOption,
   PersonalRecordType,
+  PersonalRecordTrendPoint,
+  PersonalRecordPeriodComparison,
+  EstimatedOneRepMaxPoint,
+  PersonalRecordFrequencySummary,
+  PersonalRecordPlateauSignal,
 } from '../types';
 
 export const PERSONAL_RECORD_CALCULATION_VERSION = 1;
@@ -271,6 +276,188 @@ export async function getPersonalRecordHistory(
   `, [...params, limit, offset]);
   const total = Number(count?.total || 0);
   return { records, total, limit, offset, hasMore: offset + records.length < total };
+}
+
+export async function getPersonalRecordTrend({
+  exerciseId,
+  recordType,
+  from,
+  to,
+  limit = 100,
+}: PersonalRecordHistoryFilters = {}): Promise<PersonalRecordTrendPoint[]> {
+  const conditions: string[] = [];
+  const params: Array<string | number> = [];
+  if (exerciseId !== undefined) {
+    conditions.push('pr.exercise_id = ?');
+    params.push(exerciseId);
+  }
+  if (recordType) {
+    conditions.push('pr.record_type = ?');
+    params.push(recordType);
+  }
+  if (from) {
+    conditions.push('datetime(pr.achieved_at) >= datetime(?)');
+    params.push(from);
+  }
+  if (to) {
+    conditions.push('datetime(pr.achieved_at) <= datetime(?)');
+    params.push(to);
+  }
+  params.push(Math.max(1, Math.min(limit, 500)));
+  return selectRaw<PersonalRecordTrendPoint>(`
+    SELECT pr.exercise_id, e.name AS exercise_name, pr.record_type, pr.value, pr.previous_value, pr.achieved_at
+    FROM personal_records pr
+    JOIN exercises e ON e.id = pr.exercise_id
+    ${conditions.length ? `WHERE ${conditions.join(' AND ')}` : ''}
+    ORDER BY datetime(pr.achieved_at) ASC, pr.id ASC
+    LIMIT ?
+  `, params);
+}
+
+export async function getPersonalRecordPeriodComparison({
+  currentFrom,
+  currentTo,
+  previousFrom,
+  previousTo,
+  exerciseId,
+  recordType,
+}: {
+  currentFrom: string;
+  currentTo: string;
+  previousFrom: string;
+  previousTo: string;
+  exerciseId?: number;
+  recordType?: PersonalRecordType;
+}): Promise<PersonalRecordPeriodComparison> {
+  const buildQuery = async (from: string, to: string) => {
+    const conditions = ['datetime(pr.achieved_at) >= datetime(?)', 'datetime(pr.achieved_at) <= datetime(?)'];
+    const params: Array<string | number> = [from, to];
+    if (exerciseId !== undefined) {
+      conditions.push('pr.exercise_id = ?');
+      params.push(exerciseId);
+    }
+    if (recordType) {
+      conditions.push('pr.record_type = ?');
+      params.push(recordType);
+    }
+    return selectRawOne<{ count: number; bestValue: number | null }>(`
+      SELECT COUNT(*) AS count, MAX(pr.value) AS bestValue
+      FROM personal_records pr
+      WHERE ${conditions.join(' AND ')}
+    `, params);
+  };
+
+  const current = await buildQuery(currentFrom, currentTo);
+  const previous = await buildQuery(previousFrom, previousTo);
+  const currentCount = Number(current?.count || 0);
+  const previousCount = Number(previous?.count || 0);
+  return {
+    currentCount,
+    previousCount,
+    delta: currentCount - previousCount,
+    currentBestValue: current?.bestValue ?? null,
+    previousBestValue: previous?.bestValue ?? null,
+  };
+}
+
+export async function getEstimatedOneRepMaxHistory({
+  exerciseId,
+  from,
+  to,
+  limit = 100,
+}: Pick<PersonalRecordHistoryFilters, 'exerciseId' | 'from' | 'to' | 'limit'> = {}): Promise<EstimatedOneRepMaxPoint[]> {
+  const conditions = ['sl.weight IS NOT NULL', 'sl.weight > 0', 'sl.reps IS NOT NULL', 'sl.reps > 0'];
+  const params: Array<string | number> = [];
+  if (exerciseId !== undefined) {
+    conditions.push('el.exercise_id = ?');
+    params.push(exerciseId);
+  }
+  if (from) {
+    conditions.push('datetime(COALESCE(ws.finished_at, ws.started_at)) >= datetime(?)');
+    params.push(from);
+  }
+  if (to) {
+    conditions.push('datetime(COALESCE(ws.finished_at, ws.started_at)) <= datetime(?)');
+    params.push(to);
+  }
+  params.push(Math.max(1, Math.min(limit, 500)));
+
+  return selectRaw<EstimatedOneRepMaxPoint>(`
+    SELECT
+      el.exercise_id,
+      e.name AS exercise_name,
+      COALESCE(ws.finished_at, ws.started_at) AS achieved_at,
+      sl.weight,
+      sl.reps,
+      ROUND(sl.weight * (1 + (sl.reps / 30.0)), 2) AS estimated_one_rep_max
+    FROM set_logs sl
+    JOIN exercise_logs el ON el.id = sl.exercise_log_id
+    JOIN workout_sessions ws ON ws.id = el.workout_session_id
+    JOIN exercises e ON e.id = el.exercise_id
+    WHERE ${conditions.join(' AND ')}
+    ORDER BY datetime(COALESCE(ws.finished_at, ws.started_at)) ASC, sl.id ASC
+    LIMIT ?
+  `, params);
+}
+
+export async function getPersonalRecordFrequency({
+  exerciseId,
+  recordType,
+  from,
+  to,
+}: PersonalRecordHistoryFilters = {}): Promise<PersonalRecordFrequencySummary> {
+  const records = await getPersonalRecordTrend({ exerciseId, recordType, from, to, limit: 500 });
+  if (!records.length) return { total: 0, daysSinceLastPr: null, averageDaysBetweenPrs: null };
+
+  const timestamps = records.map(record => new Date(record.achieved_at).getTime()).filter(Number.isFinite);
+  const last = Math.max(...timestamps);
+  const daysSinceLastPr = Math.max(0, Math.floor((Date.now() - last) / 86400000));
+  const gaps = timestamps.slice(1).map((timestamp, index) => (timestamp - timestamps[index]) / 86400000);
+  const averageDaysBetweenPrs = gaps.length
+    ? Math.round((gaps.reduce((sum, gap) => sum + gap, 0) / gaps.length) * 10) / 10
+    : null;
+
+  return { total: records.length, daysSinceLastPr, averageDaysBetweenPrs };
+}
+
+export async function getPersonalRecordPlateauSignal(
+  exerciseId: number,
+  staleDays = 30,
+): Promise<PersonalRecordPlateauSignal> {
+  const latest = await selectRawOne<{ exercise_id: number; exercise_name: string; last_pr_at: string | null }>(`
+    SELECT pr.exercise_id, e.name AS exercise_name, MAX(pr.achieved_at) AS last_pr_at
+    FROM personal_records pr
+    JOIN exercises e ON e.id = pr.exercise_id
+    WHERE pr.exercise_id = ?
+    GROUP BY pr.exercise_id, e.name
+  `, [exerciseId]);
+
+  const recentSessions = await selectRawOne<{ total: number }>(`
+    SELECT COUNT(DISTINCT ws.id) AS total
+    FROM workout_sessions ws
+    JOIN exercise_logs el ON el.workout_session_id = ws.id
+    WHERE el.exercise_id = ?
+      AND ws.finished_at IS NOT NULL
+      AND datetime(ws.finished_at) >= datetime('now', '-${Math.max(1, staleDays)} days')
+  `, [exerciseId]);
+
+  const daysSinceLastPr = latest?.last_pr_at
+    ? Math.max(0, Math.floor((Date.now() - new Date(latest.last_pr_at).getTime()) / 86400000))
+    : null;
+  const recentSessionCount = Number(recentSessions?.total || 0);
+  const plateau = daysSinceLastPr !== null && daysSinceLastPr >= staleDays && recentSessionCount >= 3;
+
+  return {
+    exercise_id: exerciseId,
+    exercise_name: latest?.exercise_name,
+    last_pr_at: latest?.last_pr_at ?? null,
+    days_since_last_pr: daysSinceLastPr,
+    recent_session_count: recentSessionCount,
+    plateau,
+    reason: plateau
+      ? `No PR in ${daysSinceLastPr} days despite ${recentSessionCount} recent sessions.`
+      : 'No plateau signal detected.',
+  };
 }
 
 export async function persistPersonalRecordsForSession(sessionId: number): Promise<PersonalRecord[]> {

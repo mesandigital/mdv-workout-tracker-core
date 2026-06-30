@@ -42,6 +42,48 @@ export type PersonalRecordExerciseOption = {
   record_count: number;
 };
 
+export type PersonalRecordTrendPoint = {
+  achieved_at: string;
+  value: number;
+  previous_value?: number | null;
+  record_type: PersonalRecordType;
+  exercise_id: number;
+  exercise_name?: string;
+};
+
+export type PersonalRecordPeriodComparison = {
+  currentCount: number;
+  previousCount: number;
+  delta: number;
+  currentBestValue: number | null;
+  previousBestValue: number | null;
+};
+
+export type EstimatedOneRepMaxPoint = {
+  exercise_id: number;
+  exercise_name?: string;
+  achieved_at: string;
+  weight: number;
+  reps: number;
+  estimated_one_rep_max: number;
+};
+
+export type PersonalRecordFrequencySummary = {
+  total: number;
+  daysSinceLastPr: number | null;
+  averageDaysBetweenPrs: number | null;
+};
+
+export type PersonalRecordPlateauSignal = {
+  exercise_id: number;
+  exercise_name?: string;
+  last_pr_at: string | null;
+  days_since_last_pr: number | null;
+  recent_session_count: number;
+  plateau: boolean;
+  reason: string;
+};
+
 export type ExerciseInput = {
   name: string;
   category?: string | null;
@@ -228,6 +270,7 @@ export type HydratedSessionExercise = {
   plannedReps?: number | null;
   weight?: number | null;
   restSeconds?: number | null;
+  section?: string | null;
   blockId?: number | null;
   blockType?: WorkoutBlockType | null;
   blockName?: string | null;
