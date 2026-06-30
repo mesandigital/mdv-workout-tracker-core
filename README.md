@@ -39,16 +39,16 @@ npm install @mdv/workout-tracker-core @op-engineering/op-sqlite
 From a dedicated GitHub repo whose root is this package:
 
 ```sh
-npm install github:your-org/workout-tracker-core
+npm install github:mesandigital/workout-tracker-core
 npm install @op-engineering/op-sqlite
 ```
 
 Pin a branch, tag, or commit:
 
 ```sh
-npm install github:your-org/workout-tracker-core#main
-npm install github:your-org/workout-tracker-core#v0.1.0
-npm install github:your-org/workout-tracker-core#abc1234
+npm install github:mesandigital/workout-tracker-core#main
+npm install github:mesandigital/workout-tracker-core#v0.1.0
+npm install github:mesandigital/workout-tracker-core#abc1234
 ```
 
 If this package stays inside a larger monorepo at `src/modules/workout-tracker-core`, npm will not install that subfolder as a normal GitHub package by default. Use one of these approaches:
