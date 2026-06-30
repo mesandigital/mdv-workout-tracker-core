@@ -9,8 +9,10 @@
   "react-native": "index.ts",
   "files": [
     "adapters",
+    "analytics",
     "db",
     "repositories",
+    "sessions",
     "sync",
     "sql",
     "index.ts",
@@ -34,10 +36,20 @@
       "types": "./adapters/index.ts",
       "default": "./adapters/index.ts"
     },
+    "./analytics": {
+      "react-native": "./analytics/index.ts",
+      "types": "./analytics/index.ts",
+      "default": "./analytics/index.ts"
+    },
     "./repositories": {
       "react-native": "./repositories/index.ts",
       "types": "./repositories/index.ts",
       "default": "./repositories/index.ts"
+    },
+    "./sessions": {
+      "react-native": "./sessions/index.ts",
+      "types": "./sessions/index.ts",
+      "default": "./sessions/index.ts"
     },
     "./sync": {
       "react-native": "./sync/index.ts",
