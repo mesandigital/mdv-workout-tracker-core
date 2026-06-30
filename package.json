@@ -1,6 +1,6 @@
 {
   "name": "@mdv/workout-tracker-core",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": false,
   "description": "Local database core for exercises, workout templates, workout sessions, and session logs.",
   "license": "UNLICENSED",
