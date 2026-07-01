@@ -18,7 +18,7 @@ import {
   type WorkoutTemplateSessionSnapshot,
 } from '../repositories/programWorkoutBridge.queries';
 
-import { HydratedExercise, WorkoutSession, Set } from '../../../WorkoutTracker/types/tracker.types';
+import { HydratedExercise, WorkoutSession, Set } from '../../types';
 import type { PersonalRecord } from '../../types';
 import type { WorkoutSessionData } from '../session.types';
 import {
@@ -41,32 +41,52 @@ export const WorkoutSessionApi = {
   createWorkoutSession: async (workoutId: number): Promise<number> => {
     return await createCoreWorkoutSession(workoutId);
   },
-  startProgramWorkoutSession: async (snapshot: ProgramWorkoutSessionSnapshot) => {
+  startProgramWorkoutSession: async (
+    snapshot: ProgramWorkoutSessionSnapshot,
+  ) => {
     return await startProgramWorkoutSession(snapshot);
   },
-  startWorkoutTemplateSession: async (snapshot: WorkoutTemplateSessionSnapshot) => {
+  startWorkoutTemplateSession: async (
+    snapshot: WorkoutTemplateSessionSnapshot,
+  ) => {
     return await startWorkoutTemplateSession(snapshot);
   },
-  getActiveSession: async (workoutId?: number): Promise<WorkoutSession | null> => {
-    return await getActiveWorkoutSession(workoutId) as WorkoutSession | null;
+  getActiveSession: async (
+    workoutId?: number,
+  ): Promise<WorkoutSession | null> => {
+    return (await getActiveWorkoutSession(workoutId)) as WorkoutSession | null;
   },
-    fetchWorkoutDetails: async (id: string): Promise<Workout | null> => {
-      return await fetchWorkoutDetails(Number(id));
-    },
-  fetchWorkoutSession: async (sessionId: string): Promise<WorkoutSessionData> => {
+  fetchWorkoutDetails: async (id: string): Promise<Workout | null> => {
+    return await fetchWorkoutDetails(Number(id));
+  },
+  fetchWorkoutSession: async (
+    sessionId: string,
+  ): Promise<WorkoutSessionData> => {
     return await fetchWorkoutSessionWithLastSessionDate(Number(sessionId));
   },
   checkSessionCompletion: async (sessionId: number) => {
     return await checkWorkoutSessionCompletion(sessionId);
   },
-  updateSessionDate: async (sessionId: number, newDate: string, duration?: number): Promise<void> => {
+  updateSessionDate: async (
+    sessionId: number,
+    newDate: string,
+    duration?: number,
+  ): Promise<void> => {
     return await updateSessionDateQuery(sessionId, newDate, duration);
   },
-  updateSessionNotes: async (sessionId: number, notes: string): Promise<void> => {
+  updateSessionNotes: async (
+    sessionId: number,
+    notes: string,
+  ): Promise<void> => {
     return await updateSessionNotes(sessionId, notes);
   },
   // Only ends the session and saves notes
-  endWorkoutSession: async (sessionId: number, notes?: string, finishedAt?: string, duration?: number): Promise<PersonalRecord[]> => {
+  endWorkoutSession: async (
+    sessionId: number,
+    notes?: string,
+    finishedAt?: string,
+    duration?: number,
+  ): Promise<PersonalRecord[]> => {
     return await endCoreWorkoutSession(sessionId, notes, finishedAt, duration);
   },
   deleteWorkoutSession: async (sessionId: number): Promise<void> => {
@@ -80,16 +100,29 @@ export const WorkoutSessionApi = {
   removeExerciseFromSession: async (exerciseId: number) => {
     return removeExerciseFromSession(exerciseId);
   },
-  reorderSessionExercises: async (sessionId: number, orderedExerciseIds: number[]) => {
+  reorderSessionExercises: async (
+    sessionId: number,
+    orderedExerciseIds: number[],
+  ) => {
     return await reorderSessionExercises(sessionId, orderedExerciseIds);
   },
-  saveSessionExerciseStructure: async (sessionId: number, exercises: SessionExerciseStructureInput[]) => {
+  saveSessionExerciseStructure: async (
+    sessionId: number,
+    exercises: SessionExerciseStructureInput[],
+  ) => {
     return await saveSessionExerciseStructure(sessionId, exercises);
   },
-  generateExerciseLogsAndSets: async (sessionId: number, workoutId: number): Promise<void> => {
+  generateExerciseLogsAndSets: async (
+    sessionId: number,
+    workoutId: number,
+  ): Promise<void> => {
     return generateCoreExerciseLogsAndSets(sessionId, workoutId);
   },
-  updateExerciseLog: async (exerciseLogId: number, weight?: number, plannedReps?: number) => {
+  updateExerciseLog: async (
+    exerciseLogId: number,
+    weight?: number,
+    plannedReps?: number,
+  ) => {
     await updateExerciseLog(exerciseLogId, weight, plannedReps);
     return { exerciseLogId, weight, plannedReps };
   },
@@ -110,13 +143,26 @@ export const WorkoutSessionApi = {
   addBlockUnit: async (sessionId: number, blockId: number) => {
     return addWorkoutSessionBlockUnit(sessionId, blockId);
   },
-  updateBlockRest: async (sessionId: number, blockId: number, seconds: number) => {
+  updateBlockRest: async (
+    sessionId: number,
+    blockId: number,
+    seconds: number,
+  ) => {
     return updateWorkoutSessionBlockRest(sessionId, blockId, seconds);
   },
   convertBlockToStandalone: async (sessionId: number, blockId: number) => {
     return convertWorkoutSessionBlockToStandalone(sessionId, blockId);
   },
-  updateSetLog: async (setId: number, plannedReps: number, weight: number, reps?: number, dropSets?: HydratedExercise['sets'][number]['dropSets'], plannedDurationSeconds?: number | null, durationSeconds?: number | null, completed?: number) => {
+  updateSetLog: async (
+    setId: number,
+    plannedReps: number,
+    weight: number,
+    reps?: number,
+    dropSets?: HydratedExercise['sets'][number]['dropSets'],
+    plannedDurationSeconds?: number | null,
+    durationSeconds?: number | null,
+    completed?: number,
+  ) => {
     await updateCoreSetLog(setId, {
       planned_reps: plannedReps,
       weight,
@@ -126,11 +172,24 @@ export const WorkoutSessionApi = {
       duration_seconds: durationSeconds,
       completed,
     });
-    return { setId, plannedReps, weight, reps, dropSets, plannedDurationSeconds, durationSeconds, completed };
+    return {
+      setId,
+      plannedReps,
+      weight,
+      reps,
+      dropSets,
+      plannedDurationSeconds,
+      durationSeconds,
+      completed,
+    };
   },
-  updateSetLogStatus: async (setId: number, reps: number | null, completed: 0 | 1) => {
-     await setCompletedReps(setId, reps);
-     return { setId, reps, completed };
+  updateSetLogStatus: async (
+    setId: number,
+    reps: number | null,
+    completed: 0 | 1,
+  ) => {
+    await setCompletedReps(setId, reps);
+    return { setId, reps, completed };
   },
   deleteSetLog: async (setId: number) => {
     return await deleteCoreSetLog(setId);

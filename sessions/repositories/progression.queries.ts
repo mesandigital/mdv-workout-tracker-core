@@ -1,5 +1,5 @@
-import { selectRaw, selectRawOne } from "../../../db-adapter";
-import { getExercise } from "../../repositories/exercises";
+import { selectRaw, selectRawOne } from '../../db';
+import { getExercise } from '../../repositories/exercises';
 
 type WeightProgressionData = {
   exerciseId: number;
@@ -36,7 +36,7 @@ type WeightProgressionData = {
  */
 export async function fetchAllLastSetRepsForExercise(
   exerciseId: number,
-  setNumbers: number[]
+  setNumbers: number[],
 ): Promise<Record<number, number | null>> {
   if (!exerciseId || !setNumbers.length) return {};
   // Query all relevant set_logs for this exercise and set numbers
@@ -54,7 +54,7 @@ export async function fetchAllLastSetRepsForExercise(
         AND sl.reps > 0
       ORDER BY sl.set_number, sl.id DESC
     `,
-    [exerciseId, ...setNumbers]
+    [exerciseId, ...setNumbers],
   );
   // For each set number, find the first (latest) log
   const result: Record<number, number | null> = {};
@@ -71,7 +71,10 @@ export async function fetchAllLastSetRepsForExercise(
  * @param setNumbers - Array of set numbers to fetch last weights for
  * @returns Object mapping setNumber to last weight (or null if not found)
  */
-export async function fetchAllLastSetWeightsForExercise(exerciseId: number, setNumbers: number[]): Promise<Record<number, number | null>> {
+export async function fetchAllLastSetWeightsForExercise(
+  exerciseId: number,
+  setNumbers: number[],
+): Promise<Record<number, number | null>> {
   if (!exerciseId || !setNumbers.length) return {};
   // Query all relevant set_logs for this exercise and set numbers
   const placeholders = setNumbers.map(() => '?').join(',');
@@ -89,7 +92,7 @@ export async function fetchAllLastSetWeightsForExercise(exerciseId: number, setN
         AND sl.reps > 0
       ORDER BY sl.set_number, sl.id DESC
     `,
-    [exerciseId, ...setNumbers]
+    [exerciseId, ...setNumbers],
   );
   // For each set number, find the first (latest) log
   const result: Record<number, number | null> = {};
@@ -108,7 +111,7 @@ export async function fetchAllLastSetWeightsForExercise(exerciseId: number, setN
  */
 export async function fetchAllLastPlannedRepsForExercise(
   exerciseId: number,
-  setNumbers: number[]
+  setNumbers: number[],
 ): Promise<Record<number, number | null>> {
   if (!exerciseId || !setNumbers.length) return {};
   // Query all relevant set_logs for this exercise and set numbers
@@ -127,20 +130,24 @@ export async function fetchAllLastPlannedRepsForExercise(
         AND sl.reps > 0
       ORDER BY sl.set_number, sl.id DESC
     `,
-    [exerciseId, ...setNumbers]
+    [exerciseId, ...setNumbers],
   );
   // For each set number, find the first (latest) log
   const result: Record<number, number | null> = {};
   for (const setNumber of setNumbers) {
     const found = setLogs.find((row: any) => row.set_number === setNumber);
-    result[setNumber] = found && found.planned_reps !== null ? found.planned_reps : null;
+    result[setNumber] =
+      found && found.planned_reps !== null ? found.planned_reps : null;
   }
   return result;
 }
 /**
  * Fetches the weight for a specific set number in the last finished session for an exercise
  */
-export async function fetchLastSetWeightForExercise(exerciseId: number, setNumber: number): Promise<number | null> {
+export async function fetchLastSetWeightForExercise(
+  exerciseId: number,
+  setNumber: number,
+): Promise<number | null> {
   try {
     // Find the last set_log for this exercise and set number with completed reps
     const setLog = await selectRawOne<{ weight: number }>(
@@ -157,7 +164,7 @@ export async function fetchLastSetWeightForExercise(exerciseId: number, setNumbe
       ORDER BY id DESC
       LIMIT 1
       `,
-      [exerciseId, setNumber]
+      [exerciseId, setNumber],
     );
     return setLog && setLog.weight !== null ? setLog.weight : null;
   } catch (error) {
@@ -206,7 +213,7 @@ export async function fetchExerciseProgression(exerciseId: number) {
       GROUP BY ws.id
       ORDER BY ws.started_at DESC
       `,
-      [exerciseId]
+      [exerciseId],
     );
 
     // Aggregate stats across all sessions
@@ -226,7 +233,7 @@ export async function fetchExerciseProgression(exerciseId: number) {
       sessionsCount,
       setsCount,
       repsCount,
-      tonnage
+      tonnage,
     };
 
     return result;
@@ -240,7 +247,9 @@ export async function fetchExerciseProgression(exerciseId: number) {
  * Fetches weight progression for ALL exercises across all workouts
  * Shows comprehensive progression data for every exercise that has been logged
  */
-export async function fetchAllExercisesWeightProgression(): Promise<WeightProgressionData[]> {
+export async function fetchAllExercisesWeightProgression(): Promise<
+  WeightProgressionData[]
+> {
   try {
     // Get all exercises that have been logged with weight data
     const exercises = await selectRaw<{ exercise_id: number }>(
@@ -251,7 +260,7 @@ export async function fetchAllExercisesWeightProgression(): Promise<WeightProgre
       WHERE ws.finished_at IS NOT NULL
         AND el.weight IS NOT NULL
       ORDER BY el.exercise_id
-      `
+      `,
     );
 
     const progressionData: WeightProgressionData[] = [];
@@ -274,7 +283,9 @@ export async function fetchAllExercisesWeightProgression(): Promise<WeightProgre
  * @param exerciseId - The ID of the exercise to track
  * @returns Weight progression data with dates and weights
  */
-export async function fetchExerciseWeightProgression(exerciseId: number): Promise<WeightProgressionData | null> {
+export async function fetchExerciseWeightProgression(
+  exerciseId: number,
+): Promise<WeightProgressionData | null> {
   try {
     // Get exercise details
     const exerciseInfo = await getExercise(exerciseId);
@@ -309,16 +320,11 @@ export async function fetchExerciseWeightProgression(exerciseId: number): Promis
         AND sl.reps > 0
       ORDER BY ws.started_at ASC
       `,
-      [exerciseId]
+      [exerciseId],
     );
 
-    const {
-      sessions,
-      sessionsCount,
-      setsCount,
-      repsCount,
-      tonnage
-    } = await fetchExerciseProgression(exerciseId);
+    const { sessions, sessionsCount, setsCount, repsCount, tonnage } =
+      await fetchExerciseProgression(exerciseId);
 
     // Prepare dataPoints array
     const dataPoints = progressionData.map(row => ({
@@ -327,7 +333,7 @@ export async function fetchExerciseWeightProgression(exerciseId: number): Promis
       sessionId: row.session_id,
       setNumber: row.set_number,
       reps: row.reps,
-      plannedReps: row.planned_reps
+      plannedReps: row.planned_reps,
     }));
 
     // Calculate starting, current, and change
@@ -362,7 +368,9 @@ export async function fetchExerciseWeightProgression(exerciseId: number): Promis
         // Try to parse as JSON array
         const parsed = JSON.parse(rawSecondaryMuscles);
         if (Array.isArray(parsed)) {
-          secondaryMuscles = parsed.map(m => typeof m === 'string' ? m.replace(/^"|"$/g, '') : m);
+          secondaryMuscles = parsed.map(m =>
+            typeof m === 'string' ? m.replace(/^"|"$/g, '') : m,
+          );
         } else {
           // fallback: treat as comma-separated string
           secondaryMuscles = rawSecondaryMuscles.split(',').map(m => m.trim());
@@ -377,7 +385,8 @@ export async function fetchExerciseWeightProgression(exerciseId: number): Promis
       exerciseName: exerciseInfo.name,
       imageKey: exerciseFields.imageKey ?? exerciseFields.image_key,
       description: exerciseInfo.description,
-      primaryMuscle: exerciseFields.primaryMuscle ?? exerciseFields.primary_muscle,
+      primaryMuscle:
+        exerciseFields.primaryMuscle ?? exerciseFields.primary_muscle,
       secondaryMuscles: secondaryMuscles,
       equipment: exerciseInfo.equipment,
       bodyPart: exerciseFields.bodyPart ?? exerciseFields.body_part,
@@ -391,7 +400,7 @@ export async function fetchExerciseWeightProgression(exerciseId: number): Promis
       setsCount,
       repsCount,
       tonnage,
-      ...exerciseInfo
+      ...exerciseInfo,
     };
   } catch (error) {
     console.error('❌ Error fetching exercise weight progression:', error);
@@ -402,13 +411,15 @@ export async function fetchExerciseWeightProgression(exerciseId: number): Promis
 /**
  * Fetches the latest weight for each exercise to show current progress
  */
-export async function fetchAllExercisesLatestWeight(): Promise<{
-  exerciseId: number;
-  exerciseName: string;
-  latestWeight: number;
-  previousWeight: number | null;
-  lastWorkoutDate: string;
-}[]> {
+export async function fetchAllExercisesLatestWeight(): Promise<
+  {
+    exerciseId: number;
+    exerciseName: string;
+    latestWeight: number;
+    previousWeight: number | null;
+    lastWorkoutDate: string;
+  }[]
+> {
   try {
     const data = await selectRaw<{
       exercise_id: number;
@@ -435,12 +446,12 @@ export async function fetchAllExercisesLatestWeight(): Promise<{
             AND ws2.finished_at IS NOT NULL
         )
       ORDER BY ws.started_at DESC
-      `
+      `,
     );
 
     // Get previous weight for comparison
     const results = await Promise.all(
-      data.map(async (row) => {
+      data.map(async row => {
         const previousWeightData = await selectRaw<{ weight: number }>(
           `
           SELECT el.weight
@@ -453,7 +464,7 @@ export async function fetchAllExercisesLatestWeight(): Promise<{
           ORDER BY ws.started_at DESC
           LIMIT 1
           `,
-          [row.exercise_id, row.last_workout_date]
+          [row.exercise_id, row.last_workout_date],
         );
 
         return {
@@ -461,9 +472,9 @@ export async function fetchAllExercisesLatestWeight(): Promise<{
           exerciseName: row.exercise_name,
           latestWeight: row.latest_weight,
           previousWeight: previousWeightData[0]?.weight || null,
-          lastWorkoutDate: row.last_workout_date
+          lastWorkoutDate: row.last_workout_date,
         };
-      })
+      }),
     );
 
     return results;
@@ -479,7 +490,9 @@ export async function fetchAllExercisesLatestWeight(): Promise<{
  * @param workoutId - The ID of the workout
  * @returns Array of weight progression data for each exercise
  */
-export async function fetchWorkoutWeightProgression(workoutId: number): Promise<WeightProgressionData[]> {
+export async function fetchWorkoutWeightProgression(
+  workoutId: number,
+): Promise<WeightProgressionData[]> {
   try {
     // Get all exercises in this workout
     const exercises = await selectRaw<{ exercise_id: number }>(
@@ -489,7 +502,7 @@ export async function fetchWorkoutWeightProgression(workoutId: number): Promise<
       WHERE workout_id = ?
       ORDER BY order_index
       `,
-      [workoutId]
+      [workoutId],
     );
 
     const progressionData: WeightProgressionData[] = [];
@@ -509,11 +522,15 @@ export async function fetchWorkoutWeightProgression(workoutId: number): Promise<
 }
 
 // Function to get the tonnage for each session completed for a workout, to show progression in total tonnage lifted over time
-export async function fetchWorkoutTonnageProgression(workoutId: number): Promise<{
-  sessionId: number;
-  date: string;
-  tonnage: number;
-}[]> {
+export async function fetchWorkoutTonnageProgression(
+  workoutId: number,
+): Promise<
+  {
+    sessionId: number;
+    date: string;
+    tonnage: number;
+  }[]
+> {
   try {
     const data = await selectRaw<{
       session_id: number;
@@ -536,13 +553,13 @@ export async function fetchWorkoutTonnageProgression(workoutId: number): Promise
       GROUP BY ws.id
       ORDER BY ws.started_at ASC
       `,
-      [workoutId]
+      [workoutId],
     );
 
     return data.map(row => ({
       sessionId: row.session_id,
       date: row.started_at,
-      tonnage: row.tonnage
+      tonnage: row.tonnage,
     }));
   } catch (error) {
     console.error('❌ Error fetching workout tonnage progression:', error);
@@ -557,7 +574,9 @@ export async function fetchWorkoutTonnageProgression(workoutId: number): Promise
  * Returns how many times a workout was performed and the last time it was performed for a user.
  * Returns 0 and null if no completed sessions exist.
  */
-export async function getWorkoutTimesPerformedAndLastDate(workoutId: number): Promise<{
+export async function getWorkoutTimesPerformedAndLastDate(
+  workoutId: number,
+): Promise<{
   timesPerformed: number;
   lastDate: string | null;
 }> {
@@ -567,13 +586,13 @@ export async function getWorkoutTimesPerformedAndLastDate(workoutId: number): Pr
       MAX(ws.finished_at) as lastDate
     FROM workout_sessions ws
     WHERE ws.workout_id = ? AND ws.finished_at IS NOT NULL AND ws.started_at IS NOT NULL`,
-    [workoutId]
+    [workoutId],
   );
   const stat = result[0] || {};
   const statAny = stat as any;
   return {
-    timesPerformed: statAny["timesPerformed"],
-    lastDate: statAny["lastDate"]
+    timesPerformed: statAny['timesPerformed'],
+    lastDate: statAny['lastDate'],
   };
 }
 
@@ -581,24 +600,34 @@ export async function getWorkoutTimesPerformedAndLastDate(workoutId: number): Pr
  * Returns the average duration (in minutes) for completed sessions of a workout for a user.
  * Returns 0 if no completed sessions exist.
  */
-export async function getWorkoutAverageDuration(workoutId: number): Promise<number> {
+export async function getWorkoutAverageDuration(
+  workoutId: number,
+): Promise<number> {
   const result = await selectRaw(
     `SELECT 
       AVG((julianday(ws.finished_at) - julianday(ws.started_at)) * 24 * 60) as avgDuration
     FROM workout_sessions ws
     WHERE ws.workout_id = ? AND ws.finished_at IS NOT NULL AND ws.started_at IS NOT NULL`,
-    [workoutId]
+    [workoutId],
   );
   const stat = result[0] || {};
   const statAny = stat as any;
-  return statAny["avgDuration"] ?? statAny["avg_duration"] ?? statAny["avgduration"] ?? 0;
+  return (
+    statAny['avgDuration'] ??
+    statAny['avg_duration'] ??
+    statAny['avgduration'] ??
+    0
+  );
 }
 
 // Deprecated: Use getWorkoutTimesPerformedAndLastDate and getWorkoutAverageDuration instead
 /**
  * @deprecated Use getWorkoutTimesPerformedAndLastDate and getWorkoutAverageDuration instead
  */
-export async function getWorkoutStatsForUser(workoutId: number, userId: number): Promise<{
+export async function getWorkoutStatsForUser(
+  workoutId: number,
+  userId: number,
+): Promise<{
   timesPerformed: number;
   lastDate: string | null;
   avgDuration: number;
@@ -606,7 +635,7 @@ export async function getWorkoutStatsForUser(workoutId: number, userId: number):
 }> {
   const [timesAndLast, avgDuration] = await Promise.all([
     getWorkoutTimesPerformedAndLastDate(workoutId),
-    getWorkoutAverageDuration(workoutId)
+    getWorkoutAverageDuration(workoutId),
   ]);
   // totalTonnage logic preserved from before
   const tonnageResult = await selectRaw(
@@ -615,19 +644,25 @@ export async function getWorkoutStatsForUser(workoutId: number, userId: number):
       JOIN exercise_logs el ON el.workout_session_id = ws2.id
       JOIN set_logs sl ON sl.exercise_log_id = el.id
       WHERE ws2.workout_id = ? AND ws2.user_id = ? AND ws2.finished_at IS NOT NULL AND sl.reps IS NOT NULL AND sl.weight IS NOT NULL`,
-    [workoutId, userId]
+    [workoutId, userId],
   );
   const tonnageAny = (tonnageResult[0] || {}) as any;
   return {
     timesPerformed: timesAndLast.timesPerformed,
     lastDate: timesAndLast.lastDate,
     avgDuration: avgDuration,
-    totalTonnage: tonnageAny["totalTonnage"] ?? tonnageAny["total_tonnage"] ?? tonnageAny["totaltonnage"] ?? 0
+    totalTonnage:
+      tonnageAny['totalTonnage'] ??
+      tonnageAny['total_tonnage'] ??
+      tonnageAny['totaltonnage'] ??
+      0,
   };
 }
 
 // Returns the total tonnage for all completed sessions of a workout
-export async function fetchWorkoutTotalTonnage(workoutId: number): Promise<number> {
+export async function fetchWorkoutTotalTonnage(
+  workoutId: number,
+): Promise<number> {
   try {
     const result = await selectRaw<{ total_tonnage: number }>(
       `
@@ -644,7 +679,7 @@ export async function fetchWorkoutTotalTonnage(workoutId: number): Promise<numbe
         AND sl.reps IS NOT NULL
         AND sl.reps > 0
       `,
-      [workoutId]
+      [workoutId],
     );
     return result[0]?.total_tonnage || 0;
   } catch (error) {

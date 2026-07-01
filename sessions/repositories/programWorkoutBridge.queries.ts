@@ -1,5 +1,9 @@
-import { executeRaw, insert, selectRaw, selectRawOne } from '../../../db-adapter';
-import { createWorkoutSession, generateExerciseLogsAndSets, getActiveSession } from './session.queries';
+import { executeRaw, insert, selectRaw, selectRawOne } from '../../db';
+import {
+  createWorkoutSession,
+  generateExerciseLogsAndSets,
+  getActiveSession,
+} from './session.queries';
 
 type RemoteExercise = {
   id: number;
@@ -69,20 +73,19 @@ export type WorkoutTemplateSessionSnapshot = {
   exercises: ProgramExerciseSnapshot[];
 };
 
-const toTextId = (value: number | string | null | undefined) => (
-  value == null ? null : String(value)
-);
+const toTextId = (value: number | string | null | undefined) =>
+  value == null ? null : String(value);
 
 const getOrCreateLocalExercise = async (
   remoteExerciseId: number,
   exercise?: RemoteExercise | null,
   organizationId?: string | null,
-  userId?: string | null
+  userId?: string | null,
 ) => {
   const remoteId = toTextId(remoteExerciseId);
   const existing = await selectRawOne<{ id: number }>(
     'SELECT id FROM exercises WHERE remote_id = ? OR id = ? LIMIT 1',
-    [remoteId, remoteExerciseId]
+    [remoteId, remoteExerciseId],
   );
 
   if (existing?.id) {
@@ -123,7 +126,7 @@ const getOrCreateLocalExercise = async (
           exercise.image_url || null,
           exercise.image_key || null,
           existing.id,
-        ]
+        ],
       );
     }
     return existing.id;
@@ -158,11 +161,13 @@ const getOrCreateLocalExercise = async (
   return Number(localExerciseId);
 };
 
-const getOrCreateLocalWorkout = async (snapshot: ProgramWorkoutSessionSnapshot) => {
+const getOrCreateLocalWorkout = async (
+  snapshot: ProgramWorkoutSessionSnapshot,
+) => {
   const remoteId = toTextId(snapshot.programWorkoutId);
   const existing = await selectRawOne<{ id: number }>(
     'SELECT id FROM workouts WHERE remote_id = ? AND remote_source = ? LIMIT 1',
-    [remoteId, 'workout_program']
+    [remoteId, 'workout_program'],
   );
 
   if (existing?.id) {
@@ -188,7 +193,7 @@ const getOrCreateLocalWorkout = async (snapshot: ProgramWorkoutSessionSnapshot) 
         toTextId(snapshot.assignmentId),
         toTextId(snapshot.workoutId),
         existing.id,
-      ]
+      ],
     );
     return existing.id;
   }
@@ -215,11 +220,13 @@ const getOrCreateLocalWorkout = async (snapshot: ProgramWorkoutSessionSnapshot) 
   return Number(localWorkoutId);
 };
 
-const getOrCreateLocalWorkoutTemplate = async (snapshot: WorkoutTemplateSessionSnapshot) => {
+const getOrCreateLocalWorkoutTemplate = async (
+  snapshot: WorkoutTemplateSessionSnapshot,
+) => {
   const remoteId = toTextId(snapshot.workoutId);
   const existing = await selectRawOne<{ id: number }>(
     'SELECT id FROM workouts WHERE remote_id = ? AND remote_source = ? LIMIT 1',
-    [remoteId, 'workout_template']
+    [remoteId, 'workout_template'],
   );
 
   if (existing?.id) {
@@ -243,7 +250,7 @@ const getOrCreateLocalWorkoutTemplate = async (snapshot: WorkoutTemplateSessionS
         snapshot.organizationId || null,
         remoteId,
         existing.id,
-      ]
+      ],
     );
     return existing.id;
   }
@@ -267,22 +274,28 @@ const getOrCreateLocalWorkoutTemplate = async (snapshot: WorkoutTemplateSessionS
   return Number(localWorkoutId);
 };
 
-export async function importProgramWorkoutSnapshot(snapshot: ProgramWorkoutSessionSnapshot): Promise<number> {
+export async function importProgramWorkoutSnapshot(
+  snapshot: ProgramWorkoutSessionSnapshot,
+): Promise<number> {
   const localWorkoutId = await getOrCreateLocalWorkout(snapshot);
 
   // await executeRaw('DELETE FROM workout_exercise_sets WHERE workout_id = ?', [localWorkoutId]);
   // await executeRaw('DELETE FROM workout_exercises WHERE workout_id = ?', [localWorkoutId]);
 
   for (const programExercise of snapshot.exercises) {
-    const remoteExercise = programExercise.exercise || programExercise.exercises || null;
+    const remoteExercise =
+      programExercise.exercise || programExercise.exercises || null;
     const localExerciseId = await getOrCreateLocalExercise(
       programExercise.exercise_id,
       remoteExercise,
       snapshot.organizationId,
-      snapshot.userId
+      snapshot.userId,
     );
 
-    const sets = programExercise.sets || programExercise.workout_program_exercise_sets || [];
+    const sets =
+      programExercise.sets ||
+      programExercise.workout_program_exercise_sets ||
+      [];
     await insert('workout_exercises', {
       user_id: snapshot.userId || null,
       tenant_id: snapshot.organizationId,
@@ -319,22 +332,28 @@ export async function importProgramWorkoutSnapshot(snapshot: ProgramWorkoutSessi
   return localWorkoutId;
 }
 
-export async function importWorkoutTemplateSnapshot(snapshot: WorkoutTemplateSessionSnapshot): Promise<number> {
+export async function importWorkoutTemplateSnapshot(
+  snapshot: WorkoutTemplateSessionSnapshot,
+): Promise<number> {
   const localWorkoutId = await getOrCreateLocalWorkoutTemplate(snapshot);
 
   // await executeRaw('DELETE FROM workout_exercise_sets WHERE workout_id = ?', [localWorkoutId]);
   // await executeRaw('DELETE FROM workout_exercises WHERE workout_id = ?', [localWorkoutId]);
 
   for (const templateExercise of snapshot.exercises) {
-    const remoteExercise = templateExercise.exercise || templateExercise.exercises || null;
+    const remoteExercise =
+      templateExercise.exercise || templateExercise.exercises || null;
     const localExerciseId = await getOrCreateLocalExercise(
       templateExercise.exercise_id,
       remoteExercise,
       snapshot.organizationId,
-      snapshot.userId
+      snapshot.userId,
     );
 
-    const sets = templateExercise.sets || templateExercise.workout_program_exercise_sets || [];
+    const sets =
+      templateExercise.sets ||
+      templateExercise.workout_program_exercise_sets ||
+      [];
     await insert('workout_exercises', {
       user_id: snapshot.userId || null,
       tenant_id: snapshot.organizationId || null,
@@ -371,7 +390,9 @@ export async function importWorkoutTemplateSnapshot(snapshot: WorkoutTemplateSes
   return localWorkoutId;
 }
 
-export async function startWorkoutTemplateSession(snapshot: WorkoutTemplateSessionSnapshot): Promise<{
+export async function startWorkoutTemplateSession(
+  snapshot: WorkoutTemplateSessionSnapshot,
+): Promise<{
   localWorkoutId: number;
   localSessionId: number;
 }> {
@@ -383,7 +404,9 @@ export async function startWorkoutTemplateSession(snapshot: WorkoutTemplateSessi
       return { localWorkoutId, localSessionId: activeSession.id };
     }
 
-    throw new Error('You already have an active workout session. Finish or cancel it before starting another workout.');
+    throw new Error(
+      'You already have an active workout session. Finish or cancel it before starting another workout.',
+    );
   }
 
   const localSessionId = await createWorkoutSession(localWorkoutId, {
@@ -397,7 +420,9 @@ export async function startWorkoutTemplateSession(snapshot: WorkoutTemplateSessi
   return { localWorkoutId, localSessionId };
 }
 
-export async function startProgramWorkoutSession(snapshot: ProgramWorkoutSessionSnapshot): Promise<{
+export async function startProgramWorkoutSession(
+  snapshot: ProgramWorkoutSessionSnapshot,
+): Promise<{
   localWorkoutId: number;
   localSessionId: number;
 }> {
@@ -426,24 +451,27 @@ export async function startProgramWorkoutSession(snapshot: ProgramWorkoutSession
 async function hydrateSessionClientIds(localSessionId: number) {
   const exerciseLogs = await selectRaw<{ id: number }>(
     'SELECT id FROM exercise_logs WHERE workout_session_id = ? ORDER BY id',
-    [localSessionId]
+    [localSessionId],
   );
 
   for (const exerciseLog of exerciseLogs) {
     await executeRaw(
       'UPDATE exercise_logs SET client_exercise_log_id = ? WHERE id = ?',
-      [`exercise-log-${localSessionId}-${exerciseLog.id}`, exerciseLog.id]
+      [`exercise-log-${localSessionId}-${exerciseLog.id}`, exerciseLog.id],
     );
 
     const setLogs = await selectRaw<{ id: number; set_number: number }>(
       'SELECT id, set_number FROM set_logs WHERE exercise_log_id = ? ORDER BY set_number',
-      [exerciseLog.id]
+      [exerciseLog.id],
     );
 
     for (const setLog of setLogs) {
       await executeRaw(
         'UPDATE set_logs SET client_set_log_id = ? WHERE id = ?',
-        [`set-log-${localSessionId}-${exerciseLog.id}-${setLog.set_number}`, setLog.id]
+        [
+          `set-log-${localSessionId}-${exerciseLog.id}-${setLog.set_number}`,
+          setLog.id,
+        ],
       );
     }
   }

@@ -1,5 +1,8 @@
-import { executeRaw, selectRaw, selectRawOne, updateWhere } from "../../../db-adapter";
-import type { ProgressiveOverloadRecommendation, ProgressiveOverloadTemplateUpdate } from "../utils/progressiveOverloadCalculator";
+import { executeRaw, selectRaw, selectRawOne, updateWhere } from '../../db';
+import type {
+  ProgressiveOverloadRecommendation,
+  ProgressiveOverloadTemplateUpdate,
+} from '../utils/progressiveOverloadCalculator';
 
 export interface ProgressiveOverloadApplication {
   id: number;
@@ -49,7 +52,9 @@ interface ApplyProgressiveOverloadOptions {
   recommendations?: ProgressiveOverloadRecommendation[];
 }
 
-const getTemplateColumnForUpdate = (update: ProgressiveOverloadTemplateUpdate) => {
+const getTemplateColumnForUpdate = (
+  update: ProgressiveOverloadTemplateUpdate,
+) => {
   if (update.field === 'planned_duration_seconds') return 'duration_seconds';
   if (update.field === 'planned_reps') return 'planned_reps';
   if (update.field === 'planned_weight') return 'planned_weight';
@@ -114,9 +119,13 @@ export async function ensureProgressiveOverloadApplicationsTable() {
   `);
 }
 
-const parseRecommendationSnapshot = (snapshot: ProgressiveOverloadRecommendationSnapshot): ProgressiveOverloadRecommendation | null => {
+const parseRecommendationSnapshot = (
+  snapshot: ProgressiveOverloadRecommendationSnapshot,
+): ProgressiveOverloadRecommendation | null => {
   try {
-    return JSON.parse(snapshot.recommendation_json) as ProgressiveOverloadRecommendation;
+    return JSON.parse(
+      snapshot.recommendation_json,
+    ) as ProgressiveOverloadRecommendation;
   } catch {
     return {
       id: snapshot.exercise_log_id,
@@ -188,12 +197,14 @@ export async function saveProgressiveOverloadRecommendationSnapshots(
         recommendation.isBlockExercise ? 1 : 0,
         recommendation.hasDropSets ? 1 : 0,
         JSON.stringify(recommendation),
-      ]
+      ],
     );
   }
 }
 
-export async function getProgressiveOverloadRecommendationSnapshotsForSession(sessionId: number) {
+export async function getProgressiveOverloadRecommendationSnapshotsForSession(
+  sessionId: number,
+) {
   await ensureProgressiveOverloadApplicationsTable();
   const rows = await selectRaw<ProgressiveOverloadRecommendationSnapshot>(
     `
@@ -202,15 +213,20 @@ export async function getProgressiveOverloadRecommendationSnapshotsForSession(se
     WHERE workout_session_id = ?
     ORDER BY exercise_id ASC, exercise_log_id ASC
     `,
-    [sessionId]
+    [sessionId],
   );
 
   return rows
     .map(parseRecommendationSnapshot)
-    .filter((recommendation): recommendation is ProgressiveOverloadRecommendation => Boolean(recommendation));
+    .filter(
+      (recommendation): recommendation is ProgressiveOverloadRecommendation =>
+        Boolean(recommendation),
+    );
 }
 
-export async function getProgressiveOverloadApplicationsForSession(sessionId: number) {
+export async function getProgressiveOverloadApplicationsForSession(
+  sessionId: number,
+) {
   await ensureProgressiveOverloadApplicationsTable();
   return selectRaw<ProgressiveOverloadApplication>(
     `
@@ -219,18 +235,23 @@ export async function getProgressiveOverloadApplicationsForSession(sessionId: nu
     WHERE workout_session_id = ?
     ORDER BY exercise_id ASC, set_number ASC, field ASC
     `,
-    [sessionId]
+    [sessionId],
   );
 }
 
-export async function getStaleProgressiveOverloadExerciseIdsForSession(sessionId: number, exerciseIds: number[]) {
-  const uniqueExerciseIds = Array.from(new Set(exerciseIds.filter(Number.isFinite)));
+export async function getStaleProgressiveOverloadExerciseIdsForSession(
+  sessionId: number,
+  exerciseIds: number[],
+) {
+  const uniqueExerciseIds = Array.from(
+    new Set(exerciseIds.filter(Number.isFinite)),
+  );
   if (!uniqueExerciseIds.length) return [];
 
-  const currentSession = await selectRawOne<{ id: number; started_at: string | null }>(
-    `SELECT id, started_at FROM workout_sessions WHERE id = ?`,
-    [sessionId]
-  );
+  const currentSession = await selectRawOne<{
+    id: number;
+    started_at: string | null;
+  }>(`SELECT id, started_at FROM workout_sessions WHERE id = ?`, [sessionId]);
   if (!currentSession?.started_at) return [];
 
   const placeholders = uniqueExerciseIds.map(() => '?').join(',');
@@ -253,14 +274,18 @@ export async function getStaleProgressiveOverloadExerciseIdsForSession(sessionId
       currentSession.started_at,
       currentSession.started_at,
       sessionId,
-    ]
+    ],
   );
 
   return rows.map(row => row.exercise_id);
 }
 
 const getTemplateValueForColumn = (
-  row: { planned_weight: number | null; planned_reps: number | null; duration_seconds: number | null } | null,
+  row: {
+    planned_weight: number | null;
+    planned_reps: number | null;
+    duration_seconds: number | null;
+  } | null,
   column: string,
 ) => {
   if (!row) return null;
@@ -281,9 +306,10 @@ async function applyRecommendationTemplateUpdates(
     if (!recommendation.eligible) continue;
     for (const update of recommendation.templateUpdates) {
       const column = getTemplateColumnForUpdate(update);
-      const value = column === 'drop_sets'
-        ? JSON.stringify(update.dropSets || [])
-        : update.recommendedValue;
+      const value =
+        column === 'drop_sets'
+          ? JSON.stringify(update.dropSets || [])
+          : update.recommendedValue;
 
       if (value === undefined) continue;
 
@@ -297,22 +323,25 @@ async function applyRecommendationTemplateUpdates(
         FROM workout_exercise_sets
         WHERE workout_id = ? AND exercise_id = ? AND set_number = ?
         `,
-        [workoutId, update.exerciseId, update.setNumber]
+        [workoutId, update.exerciseId, update.setNumber],
       );
 
       await updateWhere(
         'workout_exercise_sets',
         { [column]: value, updated_at: new Date().toISOString() },
         `workout_id = ? AND exercise_id = ? AND set_number = ?`,
-        [workoutId, update.exerciseId, update.setNumber]
+        [workoutId, update.exerciseId, update.setNumber],
       );
 
       if (update.dropSets?.length && update.field === 'planned_weight') {
         await updateWhere(
           'workout_exercise_sets',
-          { drop_sets: JSON.stringify(update.dropSets), updated_at: new Date().toISOString() },
+          {
+            drop_sets: JSON.stringify(update.dropSets),
+            updated_at: new Date().toISOString(),
+          },
           `workout_id = ? AND exercise_id = ? AND set_number = ?`,
-          [workoutId, update.exerciseId, update.setNumber]
+          [workoutId, update.exerciseId, update.setNumber],
         );
       }
 
@@ -342,12 +371,14 @@ async function applyRecommendationTemplateUpdates(
           update.exerciseLogId ?? recommendation.exerciseLogId ?? null,
           update.setNumber,
           update.field,
-          update.field === 'drop_sets' ? null : getTemplateValueForColumn(existingTemplateSet, column),
+          update.field === 'drop_sets'
+            ? null
+            : getTemplateValueForColumn(existingTemplateSet, column),
           update.field === 'drop_sets' ? null : update.recommendedValue ?? null,
           recommendation.recommendationType,
           recommendation.reasonCode,
           update.dropSets?.length ? JSON.stringify(update.dropSets) : null,
-        ]
+        ],
       );
     }
   }
@@ -366,7 +397,7 @@ export async function updatePlannedWeightsForExerciseSets(
   applyOverload: boolean,
   overloadValue: number,
   workoutId: number,
-  exerciseId: number
+  exerciseId: number,
 ) {
   if (!applyOverload) return;
   for (const set of setLogs) {
@@ -376,7 +407,7 @@ export async function updatePlannedWeightsForExerciseSets(
       'workout_exercise_sets',
       { planned_weight: newPlannedWeight },
       `workout_id = ? AND exercise_id = ? AND set_number = ?`,
-      [workoutId, exerciseId, set.set_number]
+      [workoutId, exerciseId, set.set_number],
     );
   }
 }
@@ -389,20 +420,28 @@ export async function updatePlannedWeightsForExerciseSets(
  */
 export function getOverloadDecision(
   exerciseId: number,
-  options: ApplyProgressiveOverloadOptions
+  options: ApplyProgressiveOverloadOptions,
 ): { applyOverload: boolean; overloadValue: number } {
   let applyOverload = false;
   let overloadValue = 0;
   // Priority: perExerciseIncrement > perExerciseOverload+overload > overload
-  if (options.perExerciseIncrement && options.perExerciseIncrement[exerciseId] !== undefined) {
+  if (
+    options.perExerciseIncrement &&
+    options.perExerciseIncrement[exerciseId] !== undefined
+  ) {
     overloadValue = options.perExerciseIncrement[exerciseId] || 0;
     applyOverload = overloadValue !== 0;
   } else if (options.perExerciseOverload) {
     applyOverload = !!options.perExerciseOverload[exerciseId];
-    overloadValue = applyOverload ? (typeof options.overload === 'number' ? options.overload : 2.5) : 0;
+    overloadValue = applyOverload
+      ? typeof options.overload === 'number'
+        ? options.overload
+        : 2.5
+      : 0;
   } else {
     applyOverload = typeof options.overload === 'number' ? true : false;
-    overloadValue = typeof options.overload === 'number' ? options.overload : 2.5;
+    overloadValue =
+      typeof options.overload === 'number' ? options.overload : 2.5;
   }
   return { applyOverload, overloadValue };
 }
@@ -413,39 +452,52 @@ export function getOverloadDecision(
  * @param progressiveOverload - Amount to increase weight (default: 2.5kg) or per-exercise map
  * @param perExerciseOverload - Optional boolean map for which exercises to apply overload
  */
-export async function applyProgressiveOverload(options: ApplyProgressiveOverloadOptions): Promise<void> {
+export async function applyProgressiveOverload(
+  options: ApplyProgressiveOverloadOptions,
+): Promise<void> {
   try {
     // 1- Get the workout_id from the session
     const session = await selectRawOne<{ workout_id: number }>(
       `SELECT workout_id FROM workout_sessions WHERE id = ?`,
-      [options.sessionId]
+      [options.sessionId],
     );
-    if (!session)  throw new Error('Session not found');
-    
+    if (!session) throw new Error('Session not found');
+
     // Extract workoutId for later use
     const workoutId = session.workout_id;
 
     if (options.recommendations?.length) {
-      await applyRecommendationTemplateUpdates(options.sessionId, workoutId, options.recommendations);
+      await applyRecommendationTemplateUpdates(
+        options.sessionId,
+        workoutId,
+        options.recommendations,
+      );
       return;
     }
 
     // 2- Get all exercise logs for this session
     const exerciseLogs = await selectRaw<{ id: number; exercise_id: number }>(
       `SELECT id, exercise_id FROM exercise_logs WHERE workout_session_id = ?`,
-      [options.sessionId]
+      [options.sessionId],
     );
 
     // 3- For each exercise log, get the performed weight for each set and update planned weights
     for (const log of exerciseLogs) {
       // 3a - Get all set_logs for this exercise_log
-      const setLogs = await selectRaw<{ id: number; set_number: number; weight: number | null }>(
+      const setLogs = await selectRaw<{
+        id: number;
+        set_number: number;
+        weight: number | null;
+      }>(
         `SELECT id, set_number, weight FROM set_logs WHERE exercise_log_id = ? ORDER BY set_number`,
-        [log.id]
+        [log.id],
       );
 
       // 3b - Use helper to determine overload
-      const { applyOverload, overloadValue } = getOverloadDecision(log.exercise_id, options);
+      const { applyOverload, overloadValue } = getOverloadDecision(
+        log.exercise_id,
+        options,
+      );
 
       // 3c - Update planned weights for all sets of this exercise
       await updatePlannedWeightsForExerciseSets(
@@ -453,7 +505,7 @@ export async function applyProgressiveOverload(options: ApplyProgressiveOverload
         applyOverload,
         overloadValue,
         workoutId,
-        log.exercise_id
+        log.exercise_id,
       );
     }
   } catch (error) {
@@ -473,22 +525,23 @@ export async function increaseWorkoutExerciseSetPlannedWeight(
   workoutId: number,
   exerciseId: number,
   setNumber: number,
-  increment: number
+  increment: number,
 ): Promise<void> {
   try {
     await executeRaw(
       `UPDATE workout_exercise_sets 
        SET planned_weight = COALESCE(planned_weight, 0) + ?
        WHERE workout_id = ? AND exercise_id = ? AND set_number = ?`,
-      [increment, workoutId, exerciseId, setNumber]
+      [increment, workoutId, exerciseId, setNumber],
     );
   } catch (error) {
-    console.error('❌ Error increasing planned weight for workout exercise set:', error);
+    console.error(
+      '❌ Error increasing planned weight for workout exercise set:',
+      error,
+    );
     throw error;
   }
 }
-
-
 
 /***********************
  * USAGE EXAMPLES

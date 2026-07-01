@@ -1,4 +1,4 @@
-import type { HydratedExercise, SetRow } from '../../../WorkoutTracker/types/tracker.types';
+import type { HydratedExercise, SetRow } from '../../types';
 
 export type ProgressiveOverloadReasonCode =
   | 'eligible_weight'
@@ -15,14 +15,22 @@ export type ProgressiveOverloadReasonCode =
   | 'block_exercise'
   | 'drop_sets_maintained';
 
-export type ProgressiveOverloadRecommendationType = 'weight' | 'reps' | 'duration' | 'maintain';
+export type ProgressiveOverloadRecommendationType =
+  | 'weight'
+  | 'reps'
+  | 'duration'
+  | 'maintain';
 
 export type ProgressiveOverloadTemplateUpdate = {
   exerciseId: number;
   exerciseLogId: number;
   setNumber: number;
   roundNumber?: number | null;
-  field: 'planned_weight' | 'planned_reps' | 'planned_duration_seconds' | 'drop_sets';
+  field:
+    | 'planned_weight'
+    | 'planned_reps'
+    | 'planned_duration_seconds'
+    | 'drop_sets';
   currentValue: number | null;
   recommendedValue: number | null;
   dropSets?: SetRow['dropSets'];
@@ -58,76 +66,102 @@ const DEFAULT_WEIGHT_INCREMENT = 2.5;
 const DEFAULT_REP_INCREMENT = 1;
 const DEFAULT_DURATION_INCREMENT_SECONDS = 5;
 
-const EQUIPMENT_WEIGHT_INCREMENTS: Array<{ match: RegExp; increment: number }> = [
-  { match: /dumbbell/i, increment: 1 },
-  { match: /kettlebell/i, increment: 4 },
-  { match: /barbell|smith/i, increment: 2.5 },
-  { match: /machine|cable|plate/i, increment: 2.5 },
-  { match: /band/i, increment: 1 },
-];
+const EQUIPMENT_WEIGHT_INCREMENTS: Array<{ match: RegExp; increment: number }> =
+  [
+    { match: /dumbbell/i, increment: 1 },
+    { match: /kettlebell/i, increment: 4 },
+    { match: /barbell|smith/i, increment: 2.5 },
+    { match: /machine|cable|plate/i, increment: 2.5 },
+    { match: /band/i, increment: 1 },
+  ];
 
 const BODYWEIGHT_EQUIPMENT = /bodyweight|none|mat/i;
 const LOADABLE_BODYWEIGHT_EQUIPMENT = /dip[_ -]?belt|weighted|vest|plate/i;
 
-const getSetNumber = (set: SetRow, index: number) => set.set_number || index + 1;
+const getSetNumber = (set: SetRow, index: number) =>
+  set.set_number || index + 1;
 
-const isTimedSet = (set: SetRow) => (
-  typeof set.plannedDurationSeconds === 'number' && set.plannedDurationSeconds > 0
-);
+const isTimedSet = (set: SetRow) =>
+  typeof set.plannedDurationSeconds === 'number' &&
+  set.plannedDurationSeconds > 0;
 
-const isSetComplete = (set: SetRow) => (
-  Boolean(set.completed)
-  || typeof set.reps === 'number'
-  || typeof set.durationSeconds === 'number'
-);
+const isSetComplete = (set: SetRow) =>
+  Boolean(set.completed) ||
+  typeof set.reps === 'number' ||
+  typeof set.durationSeconds === 'number';
 
-const isDropComplete = (drop: NonNullable<SetRow['dropSets']>[number]) => (
-  Boolean(drop.completed) || typeof drop.reps === 'number'
-);
+const isDropComplete = (drop: NonNullable<SetRow['dropSets']>[number]) =>
+  Boolean(drop.completed) || typeof drop.reps === 'number';
 
-const formatNumber = (value: number | null) => (
-  typeof value === 'number' ? String(Math.round(value * 100) / 100) : '—'
-);
+const formatNumber = (value: number | null) =>
+  typeof value === 'number' ? String(Math.round(value * 100) / 100) : '—';
 
 export function roundUpToIncrement(value: number, increment: number) {
-  if (!Number.isFinite(value) || !Number.isFinite(increment) || increment <= 0) return value;
-  return Math.round(Math.ceil((value / increment) - 1e-8) * increment * 100) / 100;
+  if (!Number.isFinite(value) || !Number.isFinite(increment) || increment <= 0)
+    return value;
+  return (
+    Math.round(Math.ceil(value / increment - 1e-8) * increment * 100) / 100
+  );
 }
 
-export function getEquipmentIncrement(exercise: Pick<HydratedExercise, 'equipment'>, fallback = DEFAULT_WEIGHT_INCREMENT) {
+export function getEquipmentIncrement(
+  exercise: Pick<HydratedExercise, 'equipment'>,
+  fallback = DEFAULT_WEIGHT_INCREMENT,
+) {
   const equipment = String(exercise.equipment || '');
-  const match = EQUIPMENT_WEIGHT_INCREMENTS.find(item => item.match.test(equipment));
+  const match = EQUIPMENT_WEIGHT_INCREMENTS.find(item =>
+    item.match.test(equipment),
+  );
   return match?.increment ?? fallback;
 }
 
-export function isBodyweightExercise(exercise: Pick<HydratedExercise, 'trainingStyle' | 'equipment' | 'exerciseType'>) {
+export function isBodyweightExercise(
+  exercise: Pick<
+    HydratedExercise,
+    'trainingStyle' | 'equipment' | 'exerciseType'
+  >,
+) {
   const equipment = String(exercise.equipment || '');
   if (LOADABLE_BODYWEIGHT_EQUIPMENT.test(equipment)) return false;
-  return exercise.trainingStyle === 'calisthenics'
-    || BODYWEIGHT_EQUIPMENT.test(equipment)
-    || String(exercise.exerciseType || '').toLowerCase() === 'bodyweight';
+  return (
+    exercise.trainingStyle === 'calisthenics' ||
+    BODYWEIGHT_EQUIPMENT.test(equipment) ||
+    String(exercise.exerciseType || '').toLowerCase() === 'bodyweight'
+  );
 }
 
 const getBestCompletedWeightedSet = (sets: SetRow[]) => {
-  const completed = sets.filter(set => isSetComplete(set) && typeof set.weight === 'number');
+  const completed = sets.filter(
+    set => isSetComplete(set) && typeof set.weight === 'number',
+  );
   if (!completed.length) return null;
   return completed.reduce((best, set) => {
     const bestWeight = best.weight ?? 0;
     const setWeight = set.weight ?? 0;
     if (setWeight > bestWeight) return set;
-    if (setWeight === bestWeight && (set.reps ?? 0) > (best.reps ?? 0)) return set;
+    if (setWeight === bestWeight && (set.reps ?? 0) > (best.reps ?? 0))
+      return set;
     return best;
   }, completed[0]);
 };
 
-const getPrimaryReasonLabel = (code: ProgressiveOverloadReasonCode, values?: { from?: number | null; to?: number | null }) => {
+const getPrimaryReasonLabel = (
+  code: ProgressiveOverloadReasonCode,
+  values?: { from?: number | null; to?: number | null },
+) => {
   switch (code) {
     case 'eligible_weight':
-      return `Completed target. Increase weight from ${formatNumber(values?.from ?? null)}kg to ${formatNumber(values?.to ?? null)}kg.`;
+      return `Completed target. Increase weight from ${formatNumber(
+        values?.from ?? null,
+      )}kg to ${formatNumber(values?.to ?? null)}kg.`;
     case 'eligible_reps':
-      return `Completed target. Increase reps from ${formatNumber(values?.from ?? null)} to ${formatNumber(values?.to ?? null)}.`;
+      return `Completed target. Increase reps from ${formatNumber(
+        values?.from ?? null,
+      )} to ${formatNumber(values?.to ?? null)}.`;
     case 'eligible_duration':
-      return `Completed target. Increase duration from ${formatNumber(values?.from ?? null)}s to ${formatNumber(values?.to ?? null)}s.`;
+      return `Completed target. Increase duration from ${formatNumber(
+        values?.from ?? null,
+      )}s to ${formatNumber(values?.to ?? null)}s.`;
     case 'incomplete_sets':
       return 'Complete every set before progressing this exercise.';
     case 'incomplete_drop_sets':
@@ -155,19 +189,30 @@ export function calculateProgressiveOverloadRecommendations(
   exercises: HydratedExercise[],
   options: ProgressiveOverloadCalculatorOptions = {},
 ): ProgressiveOverloadRecommendation[] {
-  const defaultWeightIncrement = options.defaultWeightIncrement ?? DEFAULT_WEIGHT_INCREMENT;
-  const defaultRepIncrement = options.defaultRepIncrement ?? DEFAULT_REP_INCREMENT;
-  const defaultDurationIncrementSeconds = options.defaultDurationIncrementSeconds ?? DEFAULT_DURATION_INCREMENT_SECONDS;
+  const defaultWeightIncrement =
+    options.defaultWeightIncrement ?? DEFAULT_WEIGHT_INCREMENT;
+  const defaultRepIncrement =
+    options.defaultRepIncrement ?? DEFAULT_REP_INCREMENT;
+  const defaultDurationIncrementSeconds =
+    options.defaultDurationIncrementSeconds ??
+    DEFAULT_DURATION_INCREMENT_SECONDS;
 
-  return exercises.map((exercise) => {
+  return exercises.map(exercise => {
     const sets = exercise.sets || [];
-    const isBlockExercise = Boolean(exercise.blockId || exercise.groupId || exercise.supersetId);
+    const isBlockExercise = Boolean(
+      exercise.blockId || exercise.groupId || exercise.supersetId,
+    );
     const hasDropSets = sets.some(set => (set.dropSets || []).length > 0);
     const bodyweight = isBodyweightExercise(exercise);
     const anyTimed = sets.some(isTimedSet);
     const allSetsCompleted = sets.length > 0 && sets.every(isSetComplete);
-    const allDropSetsCompleted = sets.every(set => (set.dropSets || []).every(isDropComplete));
-    const equipmentIncrement = getEquipmentIncrement(exercise, defaultWeightIncrement);
+    const allDropSetsCompleted = sets.every(set =>
+      (set.dropSets || []).every(isDropComplete),
+    );
+    const equipmentIncrement = getEquipmentIncrement(
+      exercise,
+      defaultWeightIncrement,
+    );
 
     const base = {
       id: exercise.exerciseLogId,
@@ -193,7 +238,10 @@ export function calculateProgressiveOverloadRecommendations(
       ...base,
       eligible,
       reasonCode,
-      reasonLabel: getPrimaryReasonLabel(reasonCode, { from: currentValue, to: recommendedValue }),
+      reasonLabel: getPrimaryReasonLabel(reasonCode, {
+        from: currentValue,
+        to: recommendedValue,
+      }),
       recommendationType,
       currentValue,
       recommendedValue,
@@ -201,13 +249,34 @@ export function calculateProgressiveOverloadRecommendations(
       templateUpdates,
     });
 
-    if (!sets.length) return makeRecommendation(false, 'no_sets', 'maintain', null, null, 0);
-    if (!allSetsCompleted) return makeRecommendation(false, 'incomplete_sets', 'maintain', null, null, 0);
-    if (!allDropSetsCompleted) return makeRecommendation(false, 'incomplete_drop_sets', 'maintain', null, null, 0);
+    if (!sets.length)
+      return makeRecommendation(false, 'no_sets', 'maintain', null, null, 0);
+    if (!allSetsCompleted)
+      return makeRecommendation(
+        false,
+        'incomplete_sets',
+        'maintain',
+        null,
+        null,
+        0,
+      );
+    if (!allDropSetsCompleted)
+      return makeRecommendation(
+        false,
+        'incomplete_drop_sets',
+        'maintain',
+        null,
+        null,
+        0,
+      );
 
     if (anyTimed) {
       const timedSets = sets.filter(isTimedSet);
-      const currentValue = Math.max(...timedSets.map(set => set.durationSeconds ?? set.plannedDurationSeconds ?? 0));
+      const currentValue = Math.max(
+        ...timedSets.map(
+          set => set.durationSeconds ?? set.plannedDurationSeconds ?? 0,
+        ),
+      );
       const recommendedValue = currentValue + defaultDurationIncrementSeconds;
       const updates = timedSets.map((set, index) => ({
         exerciseId: exercise.exerciseId,
@@ -216,14 +285,31 @@ export function calculateProgressiveOverloadRecommendations(
         roundNumber: set.roundNumber ?? null,
         field: 'planned_duration_seconds' as const,
         currentValue: set.plannedDurationSeconds ?? null,
-        recommendedValue: (set.plannedDurationSeconds ?? set.durationSeconds ?? currentValue) + defaultDurationIncrementSeconds,
+        recommendedValue:
+          (set.plannedDurationSeconds ?? set.durationSeconds ?? currentValue) +
+          defaultDurationIncrementSeconds,
       }));
-      return makeRecommendation(true, 'eligible_duration', 'duration', currentValue, recommendedValue, defaultDurationIncrementSeconds, updates);
+      return makeRecommendation(
+        true,
+        'eligible_duration',
+        'duration',
+        currentValue,
+        recommendedValue,
+        defaultDurationIncrementSeconds,
+        updates,
+      );
     }
 
     if (bodyweight) {
-      const currentValue = Math.max(...sets.map(set => set.reps ?? set.plannedReps ?? exercise.plannedReps ?? 0));
-      const recommendedValue = Math.max(1, Math.round(currentValue + defaultRepIncrement));
+      const currentValue = Math.max(
+        ...sets.map(
+          set => set.reps ?? set.plannedReps ?? exercise.plannedReps ?? 0,
+        ),
+      );
+      const recommendedValue = Math.max(
+        1,
+        Math.round(currentValue + defaultRepIncrement),
+      );
       const updates = sets.map((set, index) => ({
         exerciseId: exercise.exerciseId,
         exerciseLogId: exercise.exerciseLogId,
@@ -231,31 +317,67 @@ export function calculateProgressiveOverloadRecommendations(
         roundNumber: set.roundNumber ?? null,
         field: 'planned_reps' as const,
         currentValue: set.plannedReps ?? exercise.plannedReps ?? null,
-        recommendedValue: Math.max(1, Math.round((set.plannedReps ?? set.reps ?? currentValue) + defaultRepIncrement)),
+        recommendedValue: Math.max(
+          1,
+          Math.round(
+            (set.plannedReps ?? set.reps ?? currentValue) + defaultRepIncrement,
+          ),
+        ),
       }));
-      return makeRecommendation(true, 'eligible_reps', 'reps', currentValue, recommendedValue, defaultRepIncrement, updates);
+      return makeRecommendation(
+        true,
+        'eligible_reps',
+        'reps',
+        currentValue,
+        recommendedValue,
+        defaultRepIncrement,
+        updates,
+      );
     }
 
     const bestSet = getBestCompletedWeightedSet(sets);
     if (!bestSet || typeof bestSet.weight !== 'number') {
-      return makeRecommendation(false, 'no_progression_target', 'maintain', null, null, 0);
+      return makeRecommendation(
+        false,
+        'no_progression_target',
+        'maintain',
+        null,
+        null,
+        0,
+      );
     }
 
-    const hasBaseline = sets.some(set => (
-      typeof set.lastWeight === 'number'
-      || typeof set.previousBestWeight === 'number'
-      || typeof set.previousBestVolume === 'number'
-    )) || Boolean(exercise.sessionStats?.lastSessionStats?.lastBestSet);
+    const hasBaseline =
+      sets.some(
+        set =>
+          typeof set.lastWeight === 'number' ||
+          typeof set.previousBestWeight === 'number' ||
+          typeof set.previousBestVolume === 'number',
+      ) || Boolean(exercise.sessionStats?.lastSessionStats?.lastBestSet);
 
     if (!hasBaseline) {
-      return makeRecommendation(false, 'no_previous_baseline', 'maintain', bestSet.weight, bestSet.weight, 0);
+      return makeRecommendation(
+        false,
+        'no_previous_baseline',
+        'maintain',
+        bestSet.weight,
+        bestSet.weight,
+        0,
+      );
     }
 
     const currentValue = bestSet.weight;
-    const recommendedValue = roundUpToIncrement(currentValue + equipmentIncrement, equipmentIncrement);
+    const recommendedValue = roundUpToIncrement(
+      currentValue + equipmentIncrement,
+      equipmentIncrement,
+    );
     const updates = sets.map((set, index) => {
-      const setCurrentWeight = typeof set.weight === 'number' ? set.weight : currentValue;
-      const setRecommendedWeight = roundUpToIncrement(setCurrentWeight + equipmentIncrement, equipmentIncrement);
+      const setCurrentWeight =
+        typeof set.weight === 'number' ? set.weight : currentValue;
+      const setRecommendedWeight = roundUpToIncrement(
+        setCurrentWeight + equipmentIncrement,
+        equipmentIncrement,
+      );
       const update: ProgressiveOverloadTemplateUpdate = {
         exerciseId: exercise.exerciseId,
         exerciseLogId: exercise.exerciseLogId,
@@ -266,16 +388,29 @@ export function calculateProgressiveOverloadRecommendations(
         recommendedValue: setRecommendedWeight,
       };
       if ((set.dropSets || []).length) {
-        update.dropSets = (set.dropSets || []).map((drop) => ({
+        update.dropSets = (set.dropSets || []).map(drop => ({
           ...drop,
-          plannedWeight: typeof (drop.weight ?? drop.plannedWeight) === 'number'
-            ? roundUpToIncrement(Number(drop.weight ?? drop.plannedWeight) + equipmentIncrement, equipmentIncrement)
-            : drop.plannedWeight ?? null,
+          plannedWeight:
+            typeof (drop.weight ?? drop.plannedWeight) === 'number'
+              ? roundUpToIncrement(
+                  Number(drop.weight ?? drop.plannedWeight) +
+                    equipmentIncrement,
+                  equipmentIncrement,
+                )
+              : drop.plannedWeight ?? null,
         }));
       }
       return update;
     });
 
-    return makeRecommendation(true, 'eligible_weight', 'weight', currentValue, recommendedValue, equipmentIncrement, updates);
+    return makeRecommendation(
+      true,
+      'eligible_weight',
+      'weight',
+      currentValue,
+      recommendedValue,
+      equipmentIncrement,
+      updates,
+    );
   });
 }

@@ -1,5 +1,12 @@
 export type WorkoutGroupType = 'superset' | 'drop_set' | 'circuit';
-export type WorkoutBlockType = 'straight_sets' | 'circuit' | 'superset' | 'giant_set' | 'interval';
+export type WorkoutBlockType =
+  | 'straight_sets'
+  | 'circuit'
+  | 'superset'
+  | 'giant_set'
+  | 'interval';
+export type WorkoutTrackerGroupType = WorkoutGroupType;
+export type WorkoutTrackerBlockType = WorkoutBlockType;
 export type PersonalRecordType = 'weight' | 'reps' | 'volume';
 export type TrainingStyle = 'gym' | 'calisthenics';
 export type TrainingDifficulty = 'beginner' | 'intermediate' | 'advanced';
@@ -163,7 +170,10 @@ export type WorkoutTemplateBlock = {
   order_index?: number | null;
 };
 
-export type WorkoutTrackerSeedExerciseInput = Omit<ExerciseInput, 'secondary_muscles'> & {
+export type WorkoutTrackerSeedExerciseInput = Omit<
+  ExerciseInput,
+  'secondary_muscles'
+> & {
   id?: number;
   seeded_id?: string | null;
   seeded?: boolean | number;
@@ -196,10 +206,12 @@ export type WorkoutTrackerSeedWorkoutExerciseInput = {
   group_id?: number | null;
   group_type?: WorkoutGroupType | null;
   superset_id?: number | null;
-  sets?: Array<WorkoutTemplateExerciseSetInput & {
-    plannedReps?: number;
-    plannedWeight?: number | null;
-  }>;
+  sets?: Array<
+    WorkoutTemplateExerciseSetInput & {
+      plannedReps?: number;
+      plannedWeight?: number | null;
+    }
+  >;
 };
 
 export type WorkoutTrackerSeedWorkoutInput = {
@@ -233,11 +245,13 @@ export type WorkoutTemplate = {
   difficulty?: TrainingDifficulty | null;
   training_style?: TrainingStyle | null;
   blocks?: WorkoutTemplateBlock[];
-  exercises: Array<WorkoutTemplateExerciseInput & {
-    id: number;
-    exercise_name?: string;
-    sets: WorkoutTemplateExerciseSetInput[];
-  }>;
+  exercises: Array<
+    WorkoutTemplateExerciseInput & {
+      id: number;
+      exercise_name?: string;
+      sets: WorkoutTemplateExerciseSetInput[];
+    }
+  >;
 };
 
 export type WorkoutSession = {
@@ -263,6 +277,7 @@ export type SetLogInput = {
 };
 
 export type HydratedSessionExercise = {
+  id?: number;
   exerciseLogId: number;
   exerciseId: number;
   name: string;
@@ -285,10 +300,14 @@ export type HydratedSessionExercise = {
     id: number;
     exercise_log_id: number;
     set_number: number;
+    planned_reps?: number;
     plannedReps: number;
     reps: number | null;
     weight: number | null;
     completed: number;
+    lastWeight?: number | null;
+    lastReps?: number | null;
+    lastPlannedReps?: number | null;
     dropSets?: WorkoutDropSetInput[];
     roundNumber?: number | null;
     plannedDurationSeconds?: number | null;
@@ -297,6 +316,71 @@ export type HydratedSessionExercise = {
     previousBestRepsAtWeight?: number | null;
     previousBestVolume?: number | null;
   }>;
+  image_url?: string | null;
+  imageKey?: string | null;
+  image_key?: string | null;
+  category?: string | null;
+  primary_muscle?: string | null;
+  primaryMuscle?: string | null;
+  secondaryMuscles?: string | string[] | null;
+  equipment?: string | null;
+  exerciseType?: string | null;
+  trainingStyle?: TrainingStyle | null;
+  sessionStats?: {
+    lastSessionStats?: {
+      lastBestSet?: unknown;
+    } | null;
+  } | null;
+};
+
+export type HydratedExercise = HydratedSessionExercise;
+
+export type SetRow = HydratedSessionExercise['sets'][number];
+
+export type Set = {
+  exerciseLogId: number;
+  setNumber: number;
+  plannedReps: number;
+  weight?: number | null;
+  roundNumber?: number | null;
+  plannedDurationSeconds?: number | null;
+  durationSeconds?: number | null;
+  dropSets?: WorkoutDropSetInput[];
+  completed: number;
+};
+
+export type ExerciseRow = {
+  exerciseLogId: number;
+  name: string;
+  exerciseId: number;
+  blockId?: number | null;
+  blockType?: WorkoutBlockType | null;
+  blockName?: string | null;
+  blockRounds?: number | null;
+  blockRestBetweenRounds?: number | null;
+  blockOrder?: number | null;
+  planned_reps: number;
+  plannedReps: number;
+  weight?: number | null;
+  equipment?: string | null;
+  exerciseType?: string | null;
+  difficulty?: TrainingDifficulty | null;
+  trainingStyle?: TrainingStyle | null;
+  progressionGroup?: string | null;
+  progressionLevel?: number | null;
+  restSeconds?: number | null;
+  section?: string | null;
+  image_url?: string | null;
+  image_key?: string | null;
+  category?: string | null;
+  order_index?: number;
+  sets?: number;
+  reps?: number;
+  supersetId?: number | null;
+  groupId?: number | null;
+  groupType?: WorkoutGroupType | null;
+  secondary_muscles?: string | null;
+  primary_muscle?: string | null;
 };
 
 export type HydratedWorkoutSession = {
