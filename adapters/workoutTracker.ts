@@ -12,6 +12,9 @@ import {
   setCompletedReps,
   updateSetLog,
 } from '../repositories';
+import { updateSessionNotes } from '../sessions/repositories/session.queries';
+import { saveProgressiveOverloadRecommendationSnapshots } from '../sessions/repositories/progressive.queries';
+import { calculateProgressiveOverloadRecommendations } from '../sessions/utils';
 import type { HydratedWorkoutSession } from '../types';
 
 type AddSetLogInput = {
@@ -107,7 +110,7 @@ type ActiveWorkoutSessionController = {
   updateSetRow: (data: UpdateSetRowInput) => Promise<any>;
   updateCompletedRep: (data: UpdateCompletedRepInput) => Promise<any>;
   deleteSession: (sessionId: number) => Promise<any>;
-  endSession: (sessionId: number, notes?: string) => Promise<any>;
+  endSession: (sessionId: number, notes?: string, notificationContext?: any) => Promise<any>;
   checkCompletion: (sessionId: number | null) => Promise<any>;
   applyPOAsync: (data: any) => Promise<any>;
   refetchActiveSession?: () => Promise<any>;
@@ -164,6 +167,10 @@ const mapSessionExercises = (session: HydratedWorkoutSession | null): HydratedEx
 
 export function createWorkoutTrackerCoreAdapter(options: CreateWorkoutTrackerCoreAdapterOptions = {}) {
   return {
+    calculateProgressiveOverloadRecommendations,
+    saveProgressiveOverloadRecommendationSnapshots,
+    saveCompletionFeedback: (feedback: { sessionId: number; formattedNotes: string }) =>
+      updateSessionNotes(feedback.sessionId, feedback.formattedNotes),
     useActiveWorkoutSession(sessionId: number | null): ActiveWorkoutSessionController {
       const [data, setData] = useState<HydratedWorkoutSession | null>(null);
       const [isLoading, setIsLoading] = useState(Boolean(sessionId));
