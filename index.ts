@@ -6,6 +6,7 @@ export * from './db';
 export * from './db/migrations';
 export * from './db/schema';
 export * from './db/setup';
+export * from './queue';
 export * from './repositories';
 export { workoutTrackerSessions };
 export * from './sync';

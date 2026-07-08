@@ -308,6 +308,15 @@ create table if not exists weekly_plan_workouts (
   weekly_plan_id text not null,
   workout_day int not null,
   status text not null default 'scheduled',
+  scheduled_date text,
+  original_scheduled_date text,
+  started_session_id bigint,
+  completed_session_id bigint,
+  status_reason text,
+  skip_note text,
+  reschedule_note text,
+  rescheduled_from_id text,
+  rescheduled_to_date text,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   primary key (sync_user_id, id)
@@ -320,6 +329,15 @@ alter table exercise_logs add column if not exists rest_seconds int;
 alter table personal_records add column if not exists calculation_version int not null default 1;
 alter table weekly_plans add column if not exists sync_user_id uuid default auth.uid() references auth.users(id) on delete cascade;
 alter table weekly_plan_workouts add column if not exists sync_user_id uuid default auth.uid() references auth.users(id) on delete cascade;
+alter table weekly_plan_workouts add column if not exists scheduled_date text;
+alter table weekly_plan_workouts add column if not exists original_scheduled_date text;
+alter table weekly_plan_workouts add column if not exists started_session_id bigint;
+alter table weekly_plan_workouts add column if not exists completed_session_id bigint;
+alter table weekly_plan_workouts add column if not exists status_reason text;
+alter table weekly_plan_workouts add column if not exists skip_note text;
+alter table weekly_plan_workouts add column if not exists reschedule_note text;
+alter table weekly_plan_workouts add column if not exists rescheduled_from_id text;
+alter table weekly_plan_workouts add column if not exists rescheduled_to_date text;
 
 create index if not exists idx_workout_tracker_exercises_user on exercises(user_id);
 create index if not exists idx_workout_tracker_exercises_client_id on exercises(user_id, client_id);
@@ -384,6 +402,16 @@ create trigger trg_workout_tracker_personal_records_updated_at
 before update on personal_records
 for each row execute function public.set_workout_tracker_updated_at();
 
+drop trigger if exists trg_workout_tracker_progressive_overload_applications_updated_at on progressive_overload_applications;
+create trigger trg_workout_tracker_progressive_overload_applications_updated_at
+before update on progressive_overload_applications
+for each row execute function public.set_workout_tracker_updated_at();
+
+drop trigger if exists trg_workout_tracker_progressive_overload_snapshots_updated_at on progressive_overload_recommendation_snapshots;
+create trigger trg_workout_tracker_progressive_overload_snapshots_updated_at
+before update on progressive_overload_recommendation_snapshots
+for each row execute function public.set_workout_tracker_updated_at();
+
 drop trigger if exists trg_workout_tracker_weekly_plans_updated_at on weekly_plans;
 create trigger trg_workout_tracker_weekly_plans_updated_at
 before update on weekly_plans
@@ -403,6 +431,8 @@ alter table workout_sessions enable row level security;
 alter table exercise_logs enable row level security;
 alter table set_logs enable row level security;
 alter table personal_records enable row level security;
+alter table progressive_overload_applications enable row level security;
+alter table progressive_overload_recommendation_snapshots enable row level security;
 alter table weekly_plans enable row level security;
 alter table weekly_plan_workouts enable row level security;
 
@@ -440,6 +470,14 @@ for all using (user_id = auth.uid()) with check (user_id = auth.uid());
 
 drop policy if exists "users manage own personal records" on personal_records;
 create policy "users manage own personal records" on personal_records
+for all using (user_id = auth.uid()) with check (user_id = auth.uid());
+
+drop policy if exists "users manage own progressive overload applications" on progressive_overload_applications;
+create policy "users manage own progressive overload applications" on progressive_overload_applications
+for all using (user_id = auth.uid()) with check (user_id = auth.uid());
+
+drop policy if exists "users manage own progressive overload snapshots" on progressive_overload_recommendation_snapshots;
+create policy "users manage own progressive overload snapshots" on progressive_overload_recommendation_snapshots
 for all using (user_id = auth.uid()) with check (user_id = auth.uid());
 
 drop policy if exists "users manage own weekly plans" on weekly_plans;

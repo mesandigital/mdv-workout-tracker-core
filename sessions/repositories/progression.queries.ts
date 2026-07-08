@@ -380,15 +380,15 @@ export async function fetchExerciseWeightProgression(
         secondaryMuscles = rawSecondaryMuscles.split(',').map(m => m.trim());
       }
     }
+
     return {
+      ...exerciseInfo,
       exerciseId,
       exerciseName: exerciseInfo.name,
-      imageKey: exerciseFields.imageKey ?? exerciseFields.image_key,
-      description: exerciseInfo.description,
+      imageKey: exerciseInfo.image_key,
       primaryMuscle:
         exerciseFields.primaryMuscle ?? exerciseFields.primary_muscle,
       secondaryMuscles: secondaryMuscles,
-      equipment: exerciseInfo.equipment,
       bodyPart: exerciseFields.bodyPart ?? exerciseFields.body_part,
       instructions: exerciseFields.instructions,
       dataPoints,
@@ -400,7 +400,6 @@ export async function fetchExerciseWeightProgression(
       setsCount,
       repsCount,
       tonnage,
-      ...exerciseInfo,
     };
   } catch (error) {
     console.error('❌ Error fetching exercise weight progression:', error);

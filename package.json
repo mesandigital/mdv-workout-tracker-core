@@ -1,6 +1,6 @@
 {
   "name": "mdv-workout-tracker-core",
-  "version": "0.4.1",
+  "version": "0.5.0",
   "private": false,
   "description": "Local database core for exercises, workout templates, workout sessions, and session logs.",
   "license": "UNLICENSED",
@@ -11,6 +11,7 @@
     "adapters",
     "analytics",
     "db",
+    "queue",
     "repositories",
     "sessions",
     "sync",
@@ -41,6 +42,11 @@
       "types": "./analytics/index.ts",
       "default": "./analytics/index.ts"
     },
+    "./queue": {
+      "react-native": "./queue/index.ts",
+      "types": "./queue/index.ts",
+      "default": "./queue/index.ts"
+    },
     "./repositories": {
       "react-native": "./repositories/index.ts",
       "types": "./repositories/index.ts",
@@ -64,8 +70,10 @@
   },
   "peerDependencies": {
     "@op-engineering/op-sqlite": ">=15",
+    "@react-native-async-storage/async-storage": ">=1",
     "react": ">=18",
-    "react-native": ">=0.72"
+    "react-native": ">=0.72",
+    "zustand": ">=4"
   },
   "peerDependenciesMeta": {
     "@op-engineering/op-sqlite": {

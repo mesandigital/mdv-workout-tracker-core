@@ -21,6 +21,20 @@ export type WorkoutLogLike = {
   [key: string]: any;
 };
 
+export type LastWorkoutInfoExercise = {
+  name: string;
+  muscles: string;
+};
+
+export type LastWorkoutInfo = {
+  daysAgo: number;
+  workoutName: string;
+  date: string;
+  exercises: LastWorkoutInfoExercise[];
+  muscleList: string;
+  workoutLogId: string | number | null;
+};
+
 export function getLocalDateKey(dateValue: string | Date) {
   const date = typeof dateValue === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(dateValue)
     ? new Date(
@@ -182,4 +196,72 @@ export function getWorkoutConsistency(dateKeys: string[], range: WorkoutDateRang
   end.setHours(0, 0, 0, 0);
   const days = Math.max(1, Math.round((end.getTime() - start.getTime()) / 86400000) + 1);
   return Math.round((periodDateKeys.length / days) * 100);
+}
+
+export function getLastWorkoutInfo(
+  sessions: Array<{
+    finishedAt?: string | null;
+    startedAt?: string | null;
+    workoutName?: string | null;
+    name?: string | null;
+    sessionId?: string | number | null;
+    id?: string | number | null;
+    exercises?: Array<{
+      exerciseName?: string | null;
+      name?: string | null;
+      primaryMuscle?: string | null;
+      primary_muscle?: string | null;
+      muscles?: string | null;
+    }>;
+  }> = [],
+): LastWorkoutInfo | null {
+  if (!Array.isArray(sessions) || sessions.length === 0) return null;
+
+  const lastSession = sessions
+    .filter(session => session.finishedAt || session.startedAt)
+    .sort(
+      (a, b) =>
+        new Date(b.finishedAt || b.startedAt || '').getTime() -
+        new Date(a.finishedAt || a.startedAt || '').getTime(),
+    )[0];
+
+  if (!lastSession) return null;
+
+  const workoutName = lastSession.workoutName || lastSession.name || 'Workout';
+  const workoutLogId = lastSession.sessionId || lastSession.id || null;
+  const dateObj = new Date(lastSession.finishedAt || lastSession.startedAt || '');
+  const date = dateObj.toLocaleDateString(undefined, {
+    weekday: 'long',
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+  });
+  const daysAgo = Math.floor(
+    (Date.now() - dateObj.getTime()) / (1000 * 60 * 60 * 24),
+  );
+
+  const exercises: LastWorkoutInfoExercise[] = Array.isArray(lastSession.exercises)
+    ? lastSession.exercises.map(exercise => ({
+        name: exercise.exerciseName || exercise.name || 'Exercise',
+        muscles: String(
+          exercise.primaryMuscle ||
+            exercise.primary_muscle ||
+            exercise.muscles ||
+            '',
+        ),
+      }))
+    : [];
+
+  const muscleSet = new Set<string>();
+  exercises.forEach(exercise => {
+    if (!exercise.muscles) return;
+    exercise.muscles.split(',').forEach(muscle => muscleSet.add(muscle.trim()));
+  });
+
+  const muscleList = Array.from(muscleSet)
+    .filter(Boolean)
+    .map(muscle => muscle.charAt(0).toUpperCase() + muscle.slice(1).toLowerCase())
+    .join(', ');
+
+  return { daysAgo, workoutName, date, exercises, muscleList, workoutLogId };
 }

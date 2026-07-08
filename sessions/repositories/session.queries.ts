@@ -220,7 +220,7 @@ export async function generateExerciseLogsAndSets(
     }>(
       `
       SELECT
-      we.exercise_id,
+      COALESCE(e.id, we.exercise_id) as exercise_id,
       we.block_id,
       wb.type as block_type,
       wb.name as block_name,
@@ -236,6 +236,9 @@ export async function generateExerciseLogsAndSets(
       we.group_type,
       we.order_index
       FROM ${TABLES.workout_exercises} we
+      LEFT JOIN ${TABLES.exercises} e
+        ON e.id = we.exercise_id
+        OR e.seeded_id = CAST(we.exercise_id AS TEXT)
       LEFT JOIN ${TABLES.workout_blocks} wb ON wb.id = we.block_id
       WHERE we.workout_id = ?
       ORDER BY COALESCE(wb.order_index, we.order_index), we.order_index
@@ -596,7 +599,9 @@ export async function fetchWorkoutSessionWithLastSessionDate(
         e.progression_group AS progressionGroup,
         e.progression_level AS progressionLevel
       FROM ${TABLES.exercise_logs} el
-      JOIN ${TABLES.exercises} e ON e.id = el.exercise_id
+      JOIN ${TABLES.exercises} e
+        ON e.id = el.exercise_id
+        OR e.seeded_id = CAST(el.exercise_id AS TEXT)
       WHERE el.workout_session_id = ?
     ORDER BY el.order_index ASC, el.id ASC
       `,

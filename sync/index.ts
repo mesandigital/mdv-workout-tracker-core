@@ -15,11 +15,14 @@ import {
 export type WorkoutTrackerSyncDirection = 'push' | 'pull' | 'bidirectional';
 
 export type WorkoutTrackerRemoteAdapter = {
-  pull: (table: WorkoutTrackerTableName, options: WorkoutTrackerSyncTableOptions) => Promise<Array<Record<string, any>>>;
+  pull: (
+    table: WorkoutTrackerTableName,
+    options: WorkoutTrackerSyncTableOptions,
+  ) => Promise<Array<Record<string, any>>>;
   push: (
     table: WorkoutTrackerTableName,
     rows: Array<Record<string, any>>,
-    options: WorkoutTrackerSyncTableOptions
+    options: WorkoutTrackerSyncTableOptions,
   ) => Promise<Array<Record<string, any>> | void>;
 };
 
@@ -39,7 +42,11 @@ export type SyncWorkoutTrackerDataResult = {
   success: boolean;
   pushed: Partial<Record<WorkoutTrackerTableName, number>>;
   pulled: Partial<Record<WorkoutTrackerTableName, number>>;
-  errors: Array<{ table: WorkoutTrackerTableName; phase: 'push' | 'pull'; error: unknown }>;
+  errors: Array<{
+    table: WorkoutTrackerTableName;
+    phase: 'push' | 'pull';
+    error: unknown;
+  }>;
 };
 
 const now = () => new Date().toISOString();
@@ -54,7 +61,13 @@ const BOOLEAN_COLUMNS: Partial<Record<WorkoutTrackerTableName, string[]>> = {
   exercise_logs: ['deleted', 'synced'],
   set_logs: ['completed', 'deleted', 'synced'],
   personal_records: ['synced'],
-  progressive_overload_recommendation_snapshots: ['eligible', 'is_bodyweight', 'is_timed', 'is_block_exercise', 'has_drop_sets'],
+  progressive_overload_recommendation_snapshots: [
+    'eligible',
+    'is_bodyweight',
+    'is_timed',
+    'is_block_exercise',
+    'has_drop_sets',
+  ],
 };
 
 const JSON_COLUMNS: Partial<Record<WorkoutTrackerTableName, string[]>> = {
@@ -63,6 +76,10 @@ const JSON_COLUMNS: Partial<Record<WorkoutTrackerTableName, string[]>> = {
   progressive_overload_applications: ['drop_sets_snapshot'],
   progressive_overload_recommendation_snapshots: ['recommendation_json'],
 };
+
+const isUuidLike = (value: unknown) =>
+  typeof value === 'string' &&
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
 
 function parseJsonValue(value: unknown, fallback: unknown) {
   if (value == null || value === '') return fallback;
@@ -74,16 +91,19 @@ function parseJsonValue(value: unknown, fallback: unknown) {
   }
 }
 
-function serializeForRemote(table: WorkoutTrackerTableName, row: Record<string, any>) {
+function serializeForRemote(
+  table: WorkoutTrackerTableName,
+  row: Record<string, any>,
+) {
   const next = { ...row };
 
-  (BOOLEAN_COLUMNS[table] || []).forEach((column) => {
+  (BOOLEAN_COLUMNS[table] || []).forEach(column => {
     if (column in next && next[column] != null) {
       next[column] = Boolean(next[column]);
     }
   });
 
-  (JSON_COLUMNS[table] || []).forEach((column) => {
+  (JSON_COLUMNS[table] || []).forEach(column => {
     if (column in next) {
       next[column] = parseJsonValue(next[column], []);
     }
@@ -92,17 +112,24 @@ function serializeForRemote(table: WorkoutTrackerTableName, row: Record<string, 
   return next;
 }
 
-function serializeForLocal(table: WorkoutTrackerTableName, row: Record<string, any>) {
+function serializeForLocal(
+  table: WorkoutTrackerTableName,
+  row: Record<string, any>,
+) {
   const next = { ...row };
 
-  (BOOLEAN_COLUMNS[table] || []).forEach((column) => {
+  (BOOLEAN_COLUMNS[table] || []).forEach(column => {
     if (column in next && next[column] != null) {
       next[column] = next[column] ? 1 : 0;
     }
   });
 
-  (JSON_COLUMNS[table] || []).forEach((column) => {
-    if (column in next && next[column] != null && typeof next[column] !== 'string') {
+  (JSON_COLUMNS[table] || []).forEach(column => {
+    if (
+      column in next &&
+      next[column] != null &&
+      typeof next[column] !== 'string'
+    ) {
       next[column] = JSON.stringify(next[column]);
     }
   });
@@ -118,29 +145,42 @@ export const __workoutTrackerSyncInternals = {
 function getSyncTables(tables?: WorkoutTrackerTableName[]) {
   const ordered = getWorkoutTrackerTablesForSync();
   if (!tables?.length) return ordered;
-  return ordered.filter((table) => tables.includes(table));
+  return ordered.filter(table => tables.includes(table));
 }
 
-async function getRowsToPush(table: WorkoutTrackerTableName, includeDeleted: boolean) {
+async function getRowsToPush(
+  table: WorkoutTrackerTableName,
+  includeDeleted: boolean,
+) {
   const hasSynced = await tableHasColumn(table, 'synced');
   const hasDeleted = await tableHasColumn(table, 'deleted');
 
   if (hasSynced && hasDeleted && !includeDeleted) {
-    return selectRaw<Record<string, any>>(`SELECT * FROM ${table} WHERE synced = 0 AND deleted = 0`);
+    return selectRaw<Record<string, any>>(
+      `SELECT * FROM ${table} WHERE synced = 0 AND deleted = 0`,
+    );
   }
 
   if (hasSynced) {
-    return selectRaw<Record<string, any>>(`SELECT * FROM ${table} WHERE synced = 0`);
+    return selectRaw<Record<string, any>>(
+      `SELECT * FROM ${table} WHERE synced = 0`,
+    );
   }
 
   if (hasDeleted && !includeDeleted) {
-    return selectRaw<Record<string, any>>(`SELECT * FROM ${table} WHERE deleted = 0`);
+    return selectRaw<Record<string, any>>(
+      `SELECT * FROM ${table} WHERE deleted = 0`,
+    );
   }
 
   return selectRaw<Record<string, any>>(`SELECT * FROM ${table}`);
 }
 
-async function markRowsSynced(table: WorkoutTrackerTableName, rows: Array<Record<string, any>>, syncedAt: string) {
+async function markRowsSynced(
+  table: WorkoutTrackerTableName,
+  rows: Array<Record<string, any>>,
+  syncedAt: string,
+) {
   const hasSynced = await tableHasColumn(table, 'synced');
   const hasLastSyncedAt = await tableHasColumn(table, 'last_synced_at');
   const hasRemoteId = await tableHasColumn(table, 'remote_id');
@@ -148,28 +188,41 @@ async function markRowsSynced(table: WorkoutTrackerTableName, rows: Array<Record
 
   for (const row of rows) {
     if (row.id == null) continue;
-    await updateWhere(table, await filterToExistingColumns(table, {
-      synced: hasSynced ? 1 : undefined,
-      last_synced_at: hasLastSyncedAt ? syncedAt : undefined,
-      remote_id: hasRemoteId ? row.remote_id ?? row.id : undefined,
-    }), 'id = ?', [row.id as SqlValue]);
+    await updateWhere(
+      table,
+      await filterToExistingColumns(table, {
+        synced: hasSynced ? 1 : undefined,
+        last_synced_at: hasLastSyncedAt ? syncedAt : undefined,
+        remote_id: hasRemoteId ? row.remote_id ?? row.id : undefined,
+      }),
+      'id = ?',
+      [row.id as SqlValue],
+    );
   }
 }
 
-async function upsertPulledRows(table: WorkoutTrackerTableName, rows: Array<Record<string, any>>) {
+async function upsertPulledRows(
+  table: WorkoutTrackerTableName,
+  rows: Array<Record<string, any>>,
+) {
   let count = 0;
 
   for (const row of rows) {
-    const cleanRow = await filterToExistingColumns(table, serializeForLocal(table, row));
+    const cleanRow = await filterToExistingColumns(
+      table,
+      serializeForLocal(table, row),
+    );
     const columns = Object.keys(cleanRow);
     if (!columns.length) continue;
 
     const placeholders = columns.map(() => '?').join(', ');
-    const values = columns.map((column) => cleanRow[column] as SqlValue);
+    const values = columns.map(column => cleanRow[column] as SqlValue);
 
     await execute(
-      `INSERT OR REPLACE INTO ${table} (${columns.join(', ')}) VALUES (${placeholders})`,
-      values
+      `INSERT OR REPLACE INTO ${table} (${columns.join(
+        ', ',
+      )}) VALUES (${placeholders})`,
+      values,
     );
     count += 1;
   }
@@ -191,7 +244,9 @@ export async function syncWorkoutTrackerData({
   const syncedAt = now();
 
   if (direction === 'pull' || direction === 'bidirectional') {
-    for (const table of getWorkoutTrackerTablesForImport().filter((tableName) => !tables?.length || tables.includes(tableName))) {
+    for (const table of getWorkoutTrackerTablesForImport().filter(
+      tableName => !tables?.length || tables.includes(tableName),
+    )) {
       try {
         const rows = await adapter.pull(table, { userId, since });
         pulled[table] = await upsertPulledRows(table, rows);
@@ -205,11 +260,16 @@ export async function syncWorkoutTrackerData({
     for (const table of getSyncTables(tables)) {
       try {
         const rows = await getRowsToPush(table, includeDeleted);
-        const rowsWithUserId = userId == null
-          ? rows
-          : rows.map((row) => ({ ...row, user_id: row.user_id ?? userId }));
+        const rowsWithUserId =
+          userId == null
+            ? rows
+            : rows.map(row => ({ ...row, user_id: row.user_id ?? userId }));
 
-        await adapter.push(table, rowsWithUserId.map(row => serializeForRemote(table, row)), { userId, since });
+        await adapter.push(
+          table,
+          rowsWithUserId.map(row => serializeForRemote(table, row)),
+          { userId, since },
+        );
         await markRowsSynced(table, rowsWithUserId, syncedAt);
         pushed[table] = rowsWithUserId.length;
       } catch (error) {
@@ -228,34 +288,70 @@ export async function syncWorkoutTrackerData({
 
 export type SupabaseLikeClient = {
   from: (table: string) => {
-    select: (columns?: string) => {
-      eq?: (column: string, value: string | number) => Promise<{ data: any[] | null; error: any }>;
-    } | Promise<{ data: any[] | null; error: any }>;
+    select: (columns?: string) =>
+      | {
+          eq?: (
+            column: string,
+            value: string | number,
+          ) => Promise<{ data: any[] | null; error: any }>;
+        }
+      | Promise<{ data: any[] | null; error: any }>;
     upsert: (
       rows: Array<Record<string, any>>,
-      options?: { onConflict?: string }
+      options?: { onConflict?: string },
     ) => Promise<{ data: any[] | null; error: any }>;
   };
 };
 
-export function createSupabaseWorkoutTrackerSyncAdapter(supabase: SupabaseLikeClient): WorkoutTrackerRemoteAdapter {
+export function createSupabaseWorkoutTrackerSyncAdapter(
+  supabase: SupabaseLikeClient,
+): WorkoutTrackerRemoteAdapter {
   return {
     async pull(table, options) {
       const query = supabase.from(table).select('*') as any;
-      const result = options.userId != null && typeof query.eq === 'function'
-        ? await query.eq('user_id', options.userId)
-        : await query;
+      const result =
+        options.userId != null && typeof query.eq === 'function'
+          ? await query.eq('user_id', options.userId)
+          : await query;
 
       if (result.error) throw result.error;
       return result.data || [];
     },
     async push(table, rows, options) {
       if (!rows.length) return [];
+      const upsertOptions =
+        options.userId != null
+          ? { onConflict: 'user_id,id' }
+          : { onConflict: 'id' };
       const { data, error } = await supabase
         .from(table)
-        .upsert(rows, { onConflict: options.userId != null ? 'user_id,id' : 'id' });
-      if (error) throw error;
-      return data || [];
+        .upsert(rows, upsertOptions);
+      if (!error) return data || [];
+
+      const message = String(error?.message || error);
+      if (!message.includes('invalid input syntax for type uuid')) {
+        throw error;
+      }
+
+      const rowsForUuidSchema = rows.map(row => {
+        const next = { ...row };
+        if (!isUuidLike(next.id)) {
+          next.client_id = next.client_id ?? String(next.id);
+          delete next.id;
+        }
+        return next;
+      });
+      const retry = await supabase.from(table).upsert(rowsForUuidSchema);
+      if (retry.error) {
+        const retryMessage = String(retry.error?.message || retry.error);
+        if (retryMessage.includes('invalid input syntax for type uuid')) {
+          throw new Error(
+            `${table} cloud sync is still using legacy numeric workout-tracker IDs against a UUID training schema. Disable legacy workout sync for this table or migrate these rows through the training module adapter.`,
+          );
+        }
+        throw retry.error;
+      }
+      return retry.data || [];
     },
   };
 }

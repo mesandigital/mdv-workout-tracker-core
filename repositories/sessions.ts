@@ -1,5 +1,17 @@
-import { execute, insert, removeWhere, selectRaw, selectRawOne, tableHasColumn, updateWhere } from '../db';
-import type { HydratedWorkoutSession, SetLogInput, WorkoutSession } from '../types';
+import {
+  execute,
+  insert,
+  removeWhere,
+  selectRaw,
+  selectRawOne,
+  tableHasColumn,
+  updateWhere,
+} from '../db';
+import type {
+  HydratedWorkoutSession,
+  SetLogInput,
+  WorkoutSession,
+} from '../types';
 import { persistPersonalRecordsForSession } from './personalRecords';
 
 const parseTemplateSets = (value: string | null | undefined) => {
@@ -28,16 +40,18 @@ const parseJsonArray = (value: unknown) => {
   }
 };
 
-const createSessionDropSets = (value: unknown) => parseJsonArray(value).map((drop: any) => {
-  if (drop.plannedReps !== undefined || drop.plannedWeight !== undefined) return drop;
-  return {
-    plannedReps: drop.reps ?? null,
-    plannedWeight: drop.weight ?? null,
-    reps: null,
-    weight: drop.weight ?? null,
-    completed: 0,
-  };
-});
+const createSessionDropSets = (value: unknown) =>
+  parseJsonArray(value).map((drop: any) => {
+    if (drop.plannedReps !== undefined || drop.plannedWeight !== undefined)
+      return drop;
+    return {
+      plannedReps: drop.reps ?? null,
+      plannedWeight: drop.weight ?? null,
+      reps: null,
+      weight: drop.weight ?? null,
+      completed: 0,
+    };
+  });
 
 const buildDefaultSets = (exercise: any) => {
   const totalSets = Math.max(1, Math.round(Number(exercise.default_sets) || 1));
@@ -54,16 +68,19 @@ export async function getActiveWorkoutSession(workoutId?: number) {
   if (typeof workoutId === 'number') {
     return selectRawOne<WorkoutSession>(
       'SELECT * FROM workout_sessions WHERE workout_id = ? AND finished_at IS NULL ORDER BY started_at DESC LIMIT 1',
-      [workoutId]
+      [workoutId],
     );
   }
 
   return selectRawOne<WorkoutSession>(
-    'SELECT * FROM workout_sessions WHERE finished_at IS NULL ORDER BY started_at DESC LIMIT 1'
+    'SELECT * FROM workout_sessions WHERE finished_at IS NULL ORDER BY started_at DESC LIMIT 1',
   );
 }
 
-export async function createWorkoutSession(workoutId: number, startedAt = new Date().toISOString()) {
+export async function createWorkoutSession(
+  workoutId: number,
+  startedAt = new Date().toISOString(),
+) {
   return insert('workout_sessions', {
     workout_id: workoutId,
     started_at: startedAt,
@@ -71,20 +88,30 @@ export async function createWorkoutSession(workoutId: number, startedAt = new Da
   });
 }
 
-export async function generateExerciseLogsAndSets(sessionId: number, workoutId: number) {
-  const templateExercises = await selectRaw<any>(`
+export async function generateExerciseLogsAndSets(
+  sessionId: number,
+  workoutId: number,
+) {
+  const templateExercises = await selectRaw<any>(
+    `
     SELECT
       we.*,
+      COALESCE(e.id, we.exercise_id) as exercise_id,
       wb.type as block_type,
       wb.name as block_name,
       wb.rounds as block_rounds,
       wb.rest_between_rounds as block_rest_between_rounds,
       wb.order_index as block_order
     FROM workout_exercises we
+    LEFT JOIN exercises e
+      ON e.id = we.exercise_id
+      OR e.seeded_id = CAST(we.exercise_id AS TEXT)
     LEFT JOIN workout_blocks wb ON wb.id = we.block_id
     WHERE we.workout_id = ?
     ORDER BY COALESCE(wb.order_index, we.order_index) ASC, we.order_index ASC
-  `, [workoutId]);
+  `,
+    [workoutId],
+  );
 
   for (const exercise of templateExercises) {
     const exerciseLogId = await insert('exercise_logs', {
@@ -96,9 +123,12 @@ export async function generateExerciseLogsAndSets(sessionId: number, workoutId: 
       block_rest_between_rounds: exercise.block_rest_between_rounds ?? null,
       block_order: exercise.block_order ?? null,
       exercise_id: exercise.exercise_id,
-      planned_sets: exercise.block_type === 'circuit' || exercise.block_type === 'superset' || exercise.block_type === 'giant_set'
-        ? exercise.block_rounds || 1
-        : exercise.default_sets,
+      planned_sets:
+        exercise.block_type === 'circuit' ||
+        exercise.block_type === 'superset' ||
+        exercise.block_type === 'giant_set'
+          ? exercise.block_rounds || 1
+          : exercise.default_sets,
       planned_reps: exercise.default_reps,
       weight: exercise.weight,
       rest_seconds: exercise.rest_seconds ?? null,
@@ -106,48 +136,74 @@ export async function generateExerciseLogsAndSets(sessionId: number, workoutId: 
       order_index: exercise.order_index,
       superset_id: exercise.superset_id || null,
       group_id: exercise.group_id || exercise.superset_id || null,
-      group_type: exercise.group_type || (exercise.superset_id ? 'superset' : null),
+      group_type:
+        exercise.group_type || (exercise.superset_id ? 'superset' : null),
     });
 
-    const supportsWorkoutExerciseId = await tableHasColumn('workout_exercise_sets', 'workout_exercise_id');
-    const supportsDeleted = await tableHasColumn('workout_exercise_sets', 'deleted');
+    const supportsWorkoutExerciseId = await tableHasColumn(
+      'workout_exercise_sets',
+      'workout_exercise_id',
+    );
+    const supportsDeleted = await tableHasColumn(
+      'workout_exercise_sets',
+      'deleted',
+    );
     const deletedFilter = supportsDeleted ? 'AND COALESCE(deleted, 0) = 0' : '';
     let sets = supportsWorkoutExerciseId
-      ? await selectRaw<any>(`
+      ? await selectRaw<any>(
+          `
         SELECT *
         FROM workout_exercise_sets
         WHERE workout_exercise_id = ?
           ${deletedFilter}
         ORDER BY set_number ASC
-      `, [exercise.id])
-      : await selectRaw<any>(`
+      `,
+          [exercise.id],
+        )
+      : await selectRaw<any>(
+          `
         SELECT *
         FROM workout_exercise_sets
         WHERE workout_id = ?
           AND exercise_id = ?
           ${deletedFilter}
         ORDER BY set_number ASC
-      `, [workoutId, exercise.exercise_id]);
+      `,
+          [workoutId, exercise.exercise_id],
+        );
     if (sets.length === 0 && supportsWorkoutExerciseId) {
-      sets = await selectRaw<any>(`
+      sets = await selectRaw<any>(
+        `
         SELECT *
         FROM workout_exercise_sets
         WHERE workout_id = ?
           AND exercise_id = ?
           ${deletedFilter}
         ORDER BY set_number ASC
-      `, [workoutId, exercise.exercise_id]);
+      `,
+        [workoutId, exercise.exercise_id],
+      );
     }
 
     const templateSets = parseTemplateSets(exercise.setsArray);
-    const fallbackSets = sets.length ? sets : (templateSets.length ? templateSets : buildDefaultSets(exercise));
-    const sessionSets = exercise.block_type === 'circuit' || exercise.block_type === 'superset' || exercise.block_type === 'giant_set'
-      ? Array.from({ length: Math.max(1, Math.round(exercise.block_rounds || 1)) }, (_, index) => ({
-        ...(fallbackSets[0] || {}),
-        set_number: index + 1,
-        round_number: index + 1,
-      }))
-      : fallbackSets;
+    const fallbackSets = sets.length
+      ? sets
+      : templateSets.length
+      ? templateSets
+      : buildDefaultSets(exercise);
+    const sessionSets =
+      exercise.block_type === 'circuit' ||
+      exercise.block_type === 'superset' ||
+      exercise.block_type === 'giant_set'
+        ? Array.from(
+            { length: Math.max(1, Math.round(exercise.block_rounds || 1)) },
+            (_, index) => ({
+              ...(fallbackSets[0] || {}),
+              set_number: index + 1,
+              round_number: index + 1,
+            }),
+          )
+        : fallbackSets;
 
     for (let index = 0; index < sessionSets.length; index += 1) {
       const set = sessionSets[index];
@@ -155,13 +211,22 @@ export async function generateExerciseLogsAndSets(sessionId: number, workoutId: 
         exercise_log_id: exerciseLogId,
         set_number: set.set_number || index + 1,
         round_number: set.round_number || null,
-        planned_reps: set.planned_reps || set.plannedReps || exercise.default_reps || 1,
-        planned_duration_seconds: set.duration_seconds ?? set.durationSeconds ?? null,
+        planned_reps:
+          set.planned_reps || set.plannedReps || exercise.default_reps || 1,
+        planned_duration_seconds:
+          set.duration_seconds ?? set.durationSeconds ?? null,
         duration_seconds: null,
         reps: null,
-        weight: set.planned_weight ?? set.plannedWeight ?? set.weight ?? exercise.weight ?? null,
+        weight:
+          set.planned_weight ??
+          set.plannedWeight ??
+          set.weight ??
+          exercise.weight ??
+          null,
         completed: 0,
-        drop_sets: JSON.stringify(createSessionDropSets(set.drop_sets || set.dropSets)),
+        drop_sets: JSON.stringify(
+          createSessionDropSets(set.drop_sets || set.dropSets),
+        ),
       });
     }
   }
@@ -177,15 +242,23 @@ export async function startWorkoutSession(workoutId: number) {
 }
 
 export async function repairWorkoutSessionBlocks(sessionId: number) {
-  const exerciseLogs = await selectRaw<any>(`
+  const exerciseLogs = await selectRaw<any>(
+    `
     SELECT id, block_id, block_type, block_rounds, planned_reps, weight
     FROM exercise_logs
     WHERE workout_session_id = ? AND block_id IS NOT NULL
     ORDER BY order_index ASC, id ASC
-  `, [sessionId]);
+  `,
+    [sessionId],
+  );
   const blocks = new Map<number, any[]>();
-  exerciseLogs.forEach((log) => {
-    if (log.block_type !== 'circuit' && log.block_type !== 'superset' && log.block_type !== 'giant_set') return;
+  exerciseLogs.forEach(log => {
+    if (
+      log.block_type !== 'circuit' &&
+      log.block_type !== 'superset' &&
+      log.block_type !== 'giant_set'
+    )
+      return;
     const members = blocks.get(log.block_id) || [];
     members.push(log);
     blocks.set(log.block_id, members);
@@ -194,36 +267,52 @@ export async function repairWorkoutSessionBlocks(sessionId: number) {
   for (const members of blocks.values()) {
     if (members.length < 2) {
       for (const member of members) {
-        await updateWhere('exercise_logs', {
-          block_id: null,
-          block_type: null,
-          block_name: null,
-          block_rounds: null,
-          block_rest_between_rounds: null,
-          block_order: null,
-          superset_id: null,
-          group_id: null,
-          group_type: null,
-        }, 'id = ?', [member.id]);
+        await updateWhere(
+          'exercise_logs',
+          {
+            block_id: null,
+            block_type: null,
+            block_name: null,
+            block_rounds: null,
+            block_rest_between_rounds: null,
+            block_order: null,
+            superset_id: null,
+            group_id: null,
+            group_type: null,
+          },
+          'id = ?',
+          [member.id],
+        );
       }
       continue;
     }
 
     const memberSets = new Map<number, any[]>();
-    let targetUnits = Math.max(1, ...members.map((member) => Number(member.block_rounds) || 1));
+    let targetUnits = Math.max(
+      1,
+      ...members.map(member => Number(member.block_rounds) || 1),
+    );
     for (const member of members) {
-      const sets = await selectRaw<any>(`
+      const sets = await selectRaw<any>(
+        `
         SELECT * FROM set_logs WHERE exercise_log_id = ? ORDER BY set_number ASC
-      `, [member.id]);
+      `,
+        [member.id],
+      );
       memberSets.set(member.id, sets);
-      targetUnits = Math.max(targetUnits, ...sets.map((set) => Number(set.round_number || set.set_number) || 1));
+      targetUnits = Math.max(
+        targetUnits,
+        ...sets.map(set => Number(set.round_number || set.set_number) || 1),
+      );
     }
 
     for (const member of members) {
       const sets = memberSets.get(member.id) || [];
       const template = sets[0];
       for (let unit = 1; unit <= targetUnits; unit += 1) {
-        const exists = sets.some((set) => Number(set.round_number || set.set_number) === unit);
+        const exists = sets.some(
+          set => Number(set.round_number || set.set_number) === unit,
+        );
         if (exists) continue;
         await insert('set_logs', {
           exercise_log_id: member.id,
@@ -239,30 +328,43 @@ export async function repairWorkoutSessionBlocks(sessionId: number) {
         });
       }
       if (Number(member.block_rounds) !== targetUnits) {
-        await updateWhere('exercise_logs', {
-          block_rounds: targetUnits,
-          planned_sets: targetUnits,
-        }, 'id = ?', [member.id]);
+        await updateWhere(
+          'exercise_logs',
+          {
+            block_rounds: targetUnits,
+            planned_sets: targetUnits,
+          },
+          'id = ?',
+          [member.id],
+        );
       }
     }
   }
 }
 
-export async function getHydratedWorkoutSession(sessionId: number): Promise<HydratedWorkoutSession | null> {
-  const session = await selectRawOne<WorkoutSession>('SELECT * FROM workout_sessions WHERE id = ?', [sessionId]);
+export async function getHydratedWorkoutSession(
+  sessionId: number,
+): Promise<HydratedWorkoutSession | null> {
+  const session = await selectRawOne<WorkoutSession>(
+    'SELECT * FROM workout_sessions WHERE id = ?',
+    [sessionId],
+  );
   if (!session) return null;
 
   await repairWorkoutSessionBlocks(sessionId);
 
-  const workout = await selectRawOne<{ name: string; description?: string | null }>(
-    'SELECT name, description FROM workouts WHERE id = ?',
-    [session.workout_id]
-  );
+  const workout = await selectRawOne<{
+    name: string;
+    description?: string | null;
+  }>('SELECT name, description FROM workouts WHERE id = ?', [
+    session.workout_id,
+  ]);
 
-  const exercises = await selectRaw<any>(`
+  const exercises = await selectRaw<any>(
+    `
     SELECT
       el.id as exerciseLogId,
-      el.exercise_id as exerciseId,
+      e.id as exerciseId,
       e.name,
       el.block_id as blockId,
       el.block_type as blockType,
@@ -291,13 +393,22 @@ export async function getHydratedWorkoutSession(sessionId: number): Promise<Hydr
       e.progression_group as progressionGroup,
       e.progression_level as progressionLevel
     FROM exercise_logs el
-    JOIN exercises e ON e.id = el.exercise_id
+    JOIN exercises e
+      ON e.id = el.exercise_id
+      OR e.seeded_id = CAST(el.exercise_id AS TEXT)
     WHERE el.workout_session_id = ?
     ORDER BY el.order_index ASC, el.id ASC
-  `, [sessionId]);
+  `,
+    [sessionId],
+  );
 
-  const hydrated = await Promise.all(exercises.map(async (exercise) => {
-    const historicalSets = await selectRaw<{ weight: number | null; reps: number | null }>(`
+  const hydrated = await Promise.all(
+    exercises.map(async exercise => {
+      const historicalSets = await selectRaw<{
+        weight: number | null;
+        reps: number | null;
+      }>(
+        `
       SELECT sl.weight, sl.reps
       FROM set_logs sl
       JOIN exercise_logs el ON el.id = sl.exercise_log_id
@@ -307,15 +418,27 @@ export async function getHydratedWorkoutSession(sessionId: number): Promise<Hydr
         AND ws.finished_at IS NOT NULL
         AND sl.reps IS NOT NULL
         AND sl.reps > 0
-    `, [exercise.exerciseId, sessionId]);
-    const previousBestWeight = historicalSets.reduce<number | null>((best, set) => (
-      typeof set.weight === 'number' && set.weight > 0 && (best === null || set.weight > best) ? set.weight : best
-    ), null);
-    const previousBestVolume = historicalSets.reduce<number | null>((best, set) => {
-      const volume = (set.weight || 0) * (set.reps || 0);
-      return volume > 0 && (best === null || volume > best) ? volume : best;
-    }, null);
-    const sets = await selectRaw<any>(`
+    `,
+        [exercise.exerciseId, sessionId],
+      );
+      const previousBestWeight = historicalSets.reduce<number | null>(
+        (best, set) =>
+          typeof set.weight === 'number' &&
+          set.weight > 0 &&
+          (best === null || set.weight > best)
+            ? set.weight
+            : best,
+        null,
+      );
+      const previousBestVolume = historicalSets.reduce<number | null>(
+        (best, set) => {
+          const volume = (set.weight || 0) * (set.reps || 0);
+          return volume > 0 && (best === null || volume > best) ? volume : best;
+        },
+        null,
+      );
+      const sets = await selectRaw<any>(
+        `
       SELECT
         id,
         exercise_log_id,
@@ -331,25 +454,30 @@ export async function getHydratedWorkoutSession(sessionId: number): Promise<Hydr
       FROM set_logs
       WHERE exercise_log_id = ?
       ORDER BY set_number ASC
-    `, [exercise.exerciseLogId]);
+    `,
+        [exercise.exerciseLogId],
+      );
 
-    return {
-      ...exercise,
-      sets: sets.map((set) => ({
-        ...set,
-        dropSets: parseJsonArray(set.dropSets),
-        previousBestWeight,
-        previousBestVolume,
-        previousBestRepsAtWeight: historicalSets.reduce<number | null>((best, historicalSet) => (
-          Number(historicalSet.weight || 0) === Number(set.weight || 0)
-            && typeof historicalSet.reps === 'number'
-            && (best === null || historicalSet.reps > best)
-            ? historicalSet.reps
-            : best
-        ), null),
-      })),
-    };
-  }));
+      return {
+        ...exercise,
+        sets: sets.map(set => ({
+          ...set,
+          dropSets: parseJsonArray(set.dropSets),
+          previousBestWeight,
+          previousBestVolume,
+          previousBestRepsAtWeight: historicalSets.reduce<number | null>(
+            (best, historicalSet) =>
+              Number(historicalSet.weight || 0) === Number(set.weight || 0) &&
+              typeof historicalSet.reps === 'number' &&
+              (best === null || historicalSet.reps > best)
+                ? historicalSet.reps
+                : best,
+            null,
+          ),
+        })),
+      };
+    }),
+  );
 
   return {
     session,
@@ -365,11 +493,13 @@ export async function listWorkoutSessions(workoutId?: number) {
   if (typeof workoutId === 'number') {
     return selectRaw<WorkoutSession>(
       'SELECT * FROM workout_sessions WHERE workout_id = ? ORDER BY started_at DESC',
-      [workoutId]
+      [workoutId],
     );
   }
 
-  return selectRaw<WorkoutSession>('SELECT * FROM workout_sessions ORDER BY started_at DESC');
+  return selectRaw<WorkoutSession>(
+    'SELECT * FROM workout_sessions ORDER BY started_at DESC',
+  );
 }
 
 export async function addSetLog(input: SetLogInput) {
@@ -387,23 +517,36 @@ export async function addSetLog(input: SetLogInput) {
   });
 }
 
-export async function addWorkoutSessionBlockUnit(sessionId: number, blockId: number) {
-  const members = await selectRaw<any>(`
+export async function addWorkoutSessionBlockUnit(
+  sessionId: number,
+  blockId: number,
+) {
+  const members = await selectRaw<any>(
+    `
     SELECT id, planned_reps, weight
     FROM exercise_logs
     WHERE workout_session_id = ? AND block_id = ?
     ORDER BY order_index ASC, id ASC
-  `, [sessionId, blockId]);
-  if (members.length < 2) throw new Error('A block needs at least two exercises.');
+  `,
+    [sessionId, blockId],
+  );
+  if (members.length < 2)
+    throw new Error('A block needs at least two exercises.');
 
   let nextUnit = 1;
   const setsByMember = new Map<number, any[]>();
   for (const member of members) {
-    const sets = await selectRaw<any>(`
+    const sets = await selectRaw<any>(
+      `
       SELECT * FROM set_logs WHERE exercise_log_id = ? ORDER BY set_number ASC
-    `, [member.id]);
+    `,
+      [member.id],
+    );
     setsByMember.set(member.id, sets);
-    nextUnit = Math.max(nextUnit, ...sets.map((set) => Number(set.round_number || set.set_number) + 1));
+    nextUnit = Math.max(
+      nextUnit,
+      ...sets.map(set => Number(set.round_number || set.set_number) + 1),
+    );
   }
 
   await execute('BEGIN');
@@ -423,10 +566,15 @@ export async function addWorkoutSessionBlockUnit(sessionId: number, blockId: num
         completed: 0,
         drop_sets: source?.drop_sets || '[]',
       });
-      await updateWhere('exercise_logs', {
-        block_rounds: nextUnit,
-        planned_sets: nextUnit,
-      }, 'id = ?', [member.id]);
+      await updateWhere(
+        'exercise_logs',
+        {
+          block_rounds: nextUnit,
+          planned_sets: nextUnit,
+        },
+        'id = ?',
+        [member.id],
+      );
     }
     await execute('COMMIT');
   } catch (error) {
@@ -437,37 +585,59 @@ export async function addWorkoutSessionBlockUnit(sessionId: number, blockId: num
   return nextUnit;
 }
 
-export async function updateWorkoutSessionBlockRest(sessionId: number, blockId: number, seconds: number) {
-  await updateWhere('exercise_logs', {
-    block_rest_between_rounds: Math.max(0, Math.round(seconds)),
-  }, 'workout_session_id = ? AND block_id = ?', [sessionId, blockId]);
+export async function updateWorkoutSessionBlockRest(
+  sessionId: number,
+  blockId: number,
+  seconds: number,
+) {
+  await updateWhere(
+    'exercise_logs',
+    {
+      block_rest_between_rounds: Math.max(0, Math.round(seconds)),
+    },
+    'workout_session_id = ? AND block_id = ?',
+    [sessionId, blockId],
+  );
 }
 
-export async function convertWorkoutSessionBlockToStandalone(sessionId: number, blockId: number) {
-  await updateWhere('exercise_logs', {
-    block_id: null,
-    block_type: null,
-    block_name: null,
-    block_rounds: null,
-    block_rest_between_rounds: null,
-    block_order: null,
-    superset_id: null,
-    group_id: null,
-    group_type: null,
-  }, 'workout_session_id = ? AND block_id = ?', [sessionId, blockId]);
+export async function convertWorkoutSessionBlockToStandalone(
+  sessionId: number,
+  blockId: number,
+) {
+  await updateWhere(
+    'exercise_logs',
+    {
+      block_id: null,
+      block_type: null,
+      block_name: null,
+      block_rounds: null,
+      block_rest_between_rounds: null,
+      block_order: null,
+      superset_id: null,
+      group_id: null,
+      group_type: null,
+    },
+    'workout_session_id = ? AND block_id = ?',
+    [sessionId, blockId],
+  );
 }
 
 export async function updateSetLog(setId: number, input: Partial<SetLogInput>) {
-  await updateWhere('set_logs', {
-    planned_reps: input.planned_reps,
-    reps: input.reps,
-    weight: input.weight,
-    completed: input.completed,
-    planned_duration_seconds: input.planned_duration_seconds,
-    duration_seconds: input.duration_seconds,
-    drop_sets: input.drop_sets ? JSON.stringify(input.drop_sets) : undefined,
-    updated_at: new Date().toISOString(),
-  }, 'id = ?', [setId]);
+  await updateWhere(
+    'set_logs',
+    {
+      planned_reps: input.planned_reps,
+      reps: input.reps,
+      weight: input.weight,
+      completed: input.completed,
+      planned_duration_seconds: input.planned_duration_seconds,
+      duration_seconds: input.duration_seconds,
+      drop_sets: input.drop_sets ? JSON.stringify(input.drop_sets) : undefined,
+      updated_at: new Date().toISOString(),
+    },
+    'id = ?',
+    [setId],
+  );
 }
 
 export async function deleteSetLog(setId: number) {
@@ -475,15 +645,25 @@ export async function deleteSetLog(setId: number) {
 }
 
 export async function setCompletedReps(setId: number, reps: number | null) {
-  await updateWhere('set_logs', {
-    reps,
-    completed: reps === null ? 0 : 1,
-    updated_at: new Date().toISOString(),
-  }, 'id = ?', [setId]);
+  await updateWhere(
+    'set_logs',
+    {
+      reps,
+      completed: reps === null ? 0 : 1,
+      updated_at: new Date().toISOString(),
+    },
+    'id = ?',
+    [setId],
+  );
 }
 
 export async function checkWorkoutSessionCompletion(sessionId: number) {
-  const rows = await selectRaw<{ completed: number; reps: number | null; drop_sets?: string | null }>(`
+  const rows = await selectRaw<{
+    completed: number;
+    reps: number | null;
+    drop_sets?: string | null;
+  }>(
+    `
     SELECT
       sl.completed,
       sl.reps,
@@ -491,12 +671,21 @@ export async function checkWorkoutSessionCompletion(sessionId: number) {
     FROM set_logs sl
     JOIN exercise_logs el ON el.id = sl.exercise_log_id
     WHERE el.workout_session_id = ?
-  `, [sessionId]);
+  `,
+    [sessionId],
+  );
 
-  const totalSets = rows.reduce((sum, row) => sum + 1 + parseJsonArray(row.drop_sets).length, 0);
+  const totalSets = rows.reduce(
+    (sum, row) => sum + 1 + parseJsonArray(row.drop_sets).length,
+    0,
+  );
   const completedSets = rows.reduce((sum, row) => {
-    const completedDrops = parseJsonArray(row.drop_sets).filter((drop: any) => drop.completed === 1 || typeof drop.reps === 'number').length;
-    return sum + (row.completed === 1 || row.reps !== null ? 1 : 0) + completedDrops;
+    const completedDrops = parseJsonArray(row.drop_sets).filter(
+      (drop: any) => drop.completed === 1 || typeof drop.reps === 'number',
+    ).length;
+    return (
+      sum + (row.completed === 1 || row.reps !== null ? 1 : 0) + completedDrops
+    );
   }, 0);
 
   return {
@@ -506,24 +695,37 @@ export async function checkWorkoutSessionCompletion(sessionId: number) {
   };
 }
 
-export async function endWorkoutSession(sessionId: number, notes?: string, finishedAt = new Date().toISOString(), duration?: number) {
-  await updateWhere('workout_sessions', {
-    finished_at: finishedAt,
-    notes: notes || null,
-    duration,
-    updated_at: new Date().toISOString(),
-  }, 'id = ?', [sessionId]);
+export async function endWorkoutSession(
+  sessionId: number,
+  notes?: string,
+  finishedAt = new Date().toISOString(),
+  duration?: number,
+) {
+  await updateWhere(
+    'workout_sessions',
+    {
+      finished_at: finishedAt,
+      notes: notes || null,
+      duration,
+      updated_at: new Date().toISOString(),
+    },
+    'id = ?',
+    [sessionId],
+  );
 
   const session = await selectRawOne<{ workout_id: number }>(
     'SELECT workout_id FROM workout_sessions WHERE id = ?',
-    [sessionId]
+    [sessionId],
   );
 
   if (!session) return [];
 
-  const exerciseLogs = await selectRaw<{ exercise_id: number; weight: number | null }>(
+  const exerciseLogs = await selectRaw<{
+    exercise_id: number;
+    weight: number | null;
+  }>(
     'SELECT exercise_id, weight FROM exercise_logs WHERE workout_session_id = ?',
-    [sessionId]
+    [sessionId],
   );
 
   for (const log of exerciseLogs) {
@@ -532,7 +734,7 @@ export async function endWorkoutSession(sessionId: number, notes?: string, finis
         'workout_exercises',
         { weight: log.weight, updated_at: new Date().toISOString() },
         'workout_id = ? AND exercise_id = ?',
-        [session.workout_id, log.exercise_id]
+        [session.workout_id, log.exercise_id],
       );
     }
   }
@@ -542,7 +744,11 @@ export async function endWorkoutSession(sessionId: number, notes?: string, finis
 
 export async function deleteWorkoutSession(sessionId: number) {
   await removeWhere('personal_records', 'workout_session_id = ?', [sessionId]);
-  await removeWhere('set_logs', 'exercise_log_id IN (SELECT id FROM exercise_logs WHERE workout_session_id = ?)', [sessionId]);
+  await removeWhere(
+    'set_logs',
+    'exercise_log_id IN (SELECT id FROM exercise_logs WHERE workout_session_id = ?)',
+    [sessionId],
+  );
   await removeWhere('exercise_logs', 'workout_session_id = ?', [sessionId]);
   await removeWhere('workout_sessions', 'id = ?', [sessionId]);
 }

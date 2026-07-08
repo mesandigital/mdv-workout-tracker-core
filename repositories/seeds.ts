@@ -1,4 +1,11 @@
-import { execute, insert, selectRaw, selectRawOne, updateWhere, type SqlValue } from '../db';
+import {
+  execute,
+  insert,
+  selectRaw,
+  selectRawOne,
+  updateWhere,
+  type SqlValue,
+} from '../db';
 import type {
   WorkoutTemplateExerciseInput,
   WorkoutTemplateExerciseSetInput,
@@ -13,17 +20,24 @@ const tableColumnsCache = new Map<string, Set<string>>();
 
 async function getTableColumns(table: string) {
   if (!tableColumnsCache.has(table)) {
-    const columns = await selectRaw<{ name: string }>(`PRAGMA table_info(${table})`);
-    tableColumnsCache.set(table, new Set(columns.map((column) => column.name)));
+    const columns = await selectRaw<{ name: string }>(
+      `PRAGMA table_info(${table})`,
+    );
+    tableColumnsCache.set(table, new Set(columns.map(column => column.name)));
   }
 
   return tableColumnsCache.get(table)!;
 }
 
-async function filterToTableColumns(table: string, data: Record<string, SqlValue>) {
+async function filterToTableColumns(
+  table: string,
+  data: Record<string, SqlValue>,
+) {
   const columns = await getTableColumns(table);
   return Object.fromEntries(
-    Object.entries(data).filter(([key, value]) => value !== undefined && columns.has(key))
+    Object.entries(data).filter(
+      ([key, value]) => value !== undefined && columns.has(key),
+    ),
   );
 }
 
@@ -32,22 +46,21 @@ const asSeedFlag = (value: boolean | number | undefined) => {
   return value === false ? 0 : 1;
 };
 
-const serializeSeedValue = (value: unknown) => (
-  Array.isArray(value) ? JSON.stringify(value) : value
-);
+const serializeSeedValue = (value: unknown) =>
+  Array.isArray(value) ? JSON.stringify(value) : value;
 
 async function upsertSeedExercise(exercise: WorkoutTrackerSeedExerciseInput) {
   const seededId = exercise.seeded_id || null;
   const seededVersion = exercise.seeded_version ?? 1;
   const existing = seededId
     ? await selectRawOne<{ id: number; seeded_version?: number | null }>(
-      'SELECT id, seeded_version FROM exercises WHERE seeded_id = ?',
-      [seededId]
-    )
+        'SELECT id, seeded_version FROM exercises WHERE seeded_id = ?',
+        [seededId],
+      )
     : await selectRawOne<{ id: number; seeded_version?: number | null }>(
-      'SELECT id, seeded_version FROM exercises WHERE lower(name) = lower(?)',
-      [exercise.name]
-    );
+        'SELECT id, seeded_version FROM exercises WHERE lower(name) = lower(?)',
+        [exercise.name],
+      );
 
   const data = await filterToTableColumns('exercises', {
     name: exercise.name,
@@ -55,7 +68,9 @@ async function upsertSeedExercise(exercise: WorkoutTrackerSeedExerciseInput) {
     description: exercise.description || null,
     body_part: exercise.body_part || null,
     primary_muscle: exercise.primary_muscle || null,
-    secondary_muscles: serializeSeedValue(exercise.secondary_muscles) as SqlValue,
+    secondary_muscles: serializeSeedValue(
+      exercise.secondary_muscles,
+    ) as SqlValue,
     equipment: exercise.equipment || null,
     movement: exercise.movement || null,
     exercise_type: exercise.exercise_type || null,
@@ -89,16 +104,32 @@ async function upsertSeedExercise(exercise: WorkoutTrackerSeedExerciseInput) {
 
 async function getExerciseSeedMap() {
   const rows = await selectRaw<{ id: number; seeded_id: string | null }>(
-    'SELECT id, seeded_id FROM exercises WHERE seeded_id IS NOT NULL'
+    'SELECT id, seeded_id FROM exercises WHERE seeded_id IS NOT NULL',
   );
 
-  return new Map(rows.map((row) => [row.seeded_id, row.id]));
+  return new Map(rows.map(row => [row.seeded_id, row.id]));
 }
 
 async function getWorkoutExerciseCount(workoutId: number) {
   const row = await selectRawOne<{ total: number }>(
     'SELECT COUNT(*) as total FROM workout_exercises WHERE workout_id = ?',
-    [workoutId]
+    [workoutId],
+  );
+
+  return row?.total || 0;
+}
+
+async function getResolvedWorkoutExerciseCount(workoutId: number) {
+  const row = await selectRawOne<{ total: number }>(
+    `
+    SELECT COUNT(e.id) as total
+    FROM workout_exercises we
+    LEFT JOIN exercises e
+      ON e.id = we.exercise_id
+      OR e.seeded_id = CAST(we.exercise_id AS TEXT)
+    WHERE we.workout_id = ?
+    `,
+    [workoutId],
   );
 
   return row?.total || 0;
@@ -107,7 +138,7 @@ async function getWorkoutExerciseCount(workoutId: number) {
 const normalizeSeedSets = (
   exercise: WorkoutTrackerSeedWorkoutExerciseInput,
   defaultReps: number,
-  defaultWeight: number | null
+  defaultWeight: number | null,
 ): WorkoutTemplateExerciseSetInput[] => {
   if (exercise.sets?.length) {
     return exercise.sets.map((set, index) => ({
@@ -132,7 +163,7 @@ const normalizeSeedSets = (
 function toWorkoutTemplateExercise(
   exercise: WorkoutTrackerSeedWorkoutExerciseInput,
   exerciseId: number,
-  index: number
+  index: number,
 ): WorkoutTemplateExerciseInput {
   const defaultReps = exercise.default_reps || exercise.plannedReps || 10;
   const defaultWeight = exercise.weight ?? exercise.plannedWeight ?? 0;
@@ -146,41 +177,62 @@ function toWorkoutTemplateExercise(
     block_rest_between_rounds: exercise.block_rest_between_rounds ?? null,
     block_order: exercise.block_order ?? null,
     order_index: index + 1,
-    default_sets: exercise.default_sets || exercise.plannedSets || exercise.sets?.length || 3,
+    default_sets:
+      exercise.default_sets ||
+      exercise.plannedSets ||
+      exercise.sets?.length ||
+      3,
     default_reps: defaultReps,
     weight: defaultWeight,
     rest_seconds: exercise.rest_seconds ?? null,
     section: exercise.section || 'main',
     superset_id: exercise.superset_id ?? null,
     group_id: exercise.group_id ?? exercise.superset_id ?? null,
-    group_type: exercise.group_type ?? (exercise.superset_id ? 'superset' : null),
+    group_type:
+      exercise.group_type ?? (exercise.superset_id ? 'superset' : null),
     sets: normalizeSeedSets(exercise, defaultReps, defaultWeight),
   };
 }
 
-async function seedWorkout(workout: WorkoutTrackerSeedWorkoutInput, exerciseSeedMap: Map<string | null, number>) {
+async function seedWorkout(
+  workout: WorkoutTrackerSeedWorkoutInput,
+  exerciseSeedMap: Map<string | null, number>,
+) {
   const seededId = workout.seeded_id || null;
   const seededVersion = workout.seeded_version ?? 1;
   const existing = seededId
     ? await selectRawOne<{ id: number; seeded_version?: number | null }>(
-      'SELECT id, seeded_version FROM workouts WHERE seeded_id = ?',
-      [seededId]
-    )
+        'SELECT id, seeded_version FROM workouts WHERE seeded_id = ?',
+        [seededId],
+      )
     : await selectRawOne<{ id: number; seeded_version?: number | null }>(
-      'SELECT id, seeded_version FROM workouts WHERE lower(name) = lower(?)',
-      [workout.name]
-    );
+        'SELECT id, seeded_version FROM workouts WHERE lower(name) = lower(?)',
+        [workout.name],
+      );
 
   const exercises = (workout.exercises || [])
     .map((exercise, index) => {
-      const exerciseId = exercise.exercise_id || exerciseSeedMap.get(exercise.exercise_seeded_id || exercise.seeded_id || null);
-      return exerciseId ? toWorkoutTemplateExercise(exercise, exerciseId, index) : null;
+      const exerciseId =
+        exercise.exercise_id ||
+        exerciseSeedMap.get(
+          exercise.exercise_seeded_id || exercise.seeded_id || null,
+        );
+      return exerciseId
+        ? toWorkoutTemplateExercise(exercise, exerciseId, index)
+        : null;
     })
     .filter(Boolean) as WorkoutTemplateExerciseInput[];
 
   if (existing && (existing.seeded_version || 0) >= seededVersion) {
     const existingExerciseCount = await getWorkoutExerciseCount(existing.id);
-    if (exercises.length === 0 || existingExerciseCount > 0) {
+    const resolvedExerciseCount =
+      existingExerciseCount > 0
+        ? await getResolvedWorkoutExerciseCount(existing.id)
+        : 0;
+    if (
+      exercises.length === 0 ||
+      (existingExerciseCount > 0 && resolvedExerciseCount >= exercises.length)
+    ) {
       return existing.id;
     }
   }
@@ -196,12 +248,17 @@ async function seedWorkout(workout: WorkoutTrackerSeedWorkoutInput, exerciseSeed
       exercises,
     });
 
-    await updateWhere('workouts', await filterToTableColumns('workouts', {
-      seeded: asSeedFlag(workout.seeded),
-      seeded_id: seededId,
-      seeded_version: Math.max(existing.seeded_version || 0, seededVersion),
-      updated_at: workout.updated_at || new Date().toISOString(),
-    }), 'id = ?', [existing.id]);
+    await updateWhere(
+      'workouts',
+      await filterToTableColumns('workouts', {
+        seeded: asSeedFlag(workout.seeded),
+        seeded_id: seededId,
+        seeded_version: Math.max(existing.seeded_version || 0, seededVersion),
+        updated_at: workout.updated_at || new Date().toISOString(),
+      }),
+      'id = ?',
+      [existing.id],
+    );
 
     return existing.id;
   }
@@ -216,15 +273,20 @@ async function seedWorkout(workout: WorkoutTrackerSeedWorkoutInput, exerciseSeed
     exercises,
   });
 
-  await updateWhere('workouts', await filterToTableColumns('workouts', {
-    seeded: asSeedFlag(workout.seeded),
-    seeded_id: seededId,
-    seeded_version: seededVersion,
-    difficulty: workout.difficulty || null,
-    training_style: workout.training_style || null,
-    created_at: workout.created_at,
-    updated_at: workout.updated_at || new Date().toISOString(),
-  }), 'id = ?', [workoutId]);
+  await updateWhere(
+    'workouts',
+    await filterToTableColumns('workouts', {
+      seeded: asSeedFlag(workout.seeded),
+      seeded_id: seededId,
+      seeded_version: seededVersion,
+      difficulty: workout.difficulty || null,
+      training_style: workout.training_style || null,
+      created_at: workout.created_at,
+      updated_at: workout.updated_at || new Date().toISOString(),
+    }),
+    'id = ?',
+    [workoutId],
+  );
 
   return workoutId;
 }

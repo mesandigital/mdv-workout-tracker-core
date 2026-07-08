@@ -12,7 +12,14 @@ import { getExerciseGapInfo } from './getExerciseGapInfo';
 
 
 export function getMostRelevantExerciseGap(
-  exercises: Array<{ name: string; lastSessionDate: string | Date | null | undefined; frequency?: number }>,
+  exercises: Array<{
+    name: string;
+    lastSessionDate: string | Date | null | undefined;
+    frequency?: number;
+    exercise_id?: string | number | null;
+    bodyPart?: string | null;
+    primaryMuscle?: string | null;
+  }>,
   cooldowns: Record<string, number> = {},
   now: Date = new Date(),
   cooldownHours: number = 48,
@@ -45,7 +52,16 @@ export function getMostRelevantExerciseGap(
   if (withScore.length > 0) {
     // Pick the highest score
     withScore.sort((a, b) => b.score - a.score);
-    return { exercise: withScore[0].name, gapInfo: withScore[0].gapInfo, days: withScore[0].days, frequency: withScore[0].frequency, score: withScore[0].score };
+    return {
+      exercise: withScore[0].name,
+      exercise_id: withScore[0].exercise_id,
+      bodyPart: withScore[0].bodyPart,
+      primaryMuscle: withScore[0].primaryMuscle,
+      gapInfo: withScore[0].gapInfo,
+      days: withScore[0].days,
+      frequency: withScore[0].frequency,
+      score: withScore[0].score,
+    };
   }
   return null;
 }

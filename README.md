@@ -23,6 +23,8 @@ For a full app example with SQLite setup, tracker UI, demo workout creation, and
 - [Seed Initial Data](#seed-initial-data)
 - [Create Exercises and Workouts](#create-exercises-and-workouts)
 - [Start and Log Sessions](#start-and-log-sessions)
+- [Analytics Helpers](#analytics-helpers)
+- [Exercise Queue](#exercise-queue)
 - [Export and Import Backups](#export-and-import-backups)
 - [Cloud Sync](#cloud-sync)
 - [Connect to the Tracker UI](#connect-to-the-tracker-ui)
@@ -214,7 +216,7 @@ import {
   createExercise,
   createWorkoutTemplate,
   listExercises,
-} from '@mdv/workout-tracker-core';
+} from 'mdv-workout-tracker-core';
 
 const squatId = await createExercise({
   name: 'Back Squat',
@@ -269,6 +271,60 @@ Use `group_type` and `group_id` for grouped work:
 ```ts
 type WorkoutGroupType = 'superset' | 'drop_set' | 'circuit';
 ```
+
+## Analytics Helpers
+
+The core package exports shared workout calculations that should be reused by widgets, dashboards, history screens, and planning surfaces instead of being reimplemented in UI code.
+
+```ts
+import {
+  getLastWorkoutInfo,
+  getWorkoutDateKeys,
+  getWorkoutDurationMinutes,
+  getWorkoutMetricsByDate,
+  getWorkoutStreaks,
+  getWorkoutConsistency,
+  getWorkoutTonnage,
+  summarizeLastWorkoutExercises,
+  summarizePersonalRecords,
+} from '@mdv/workout-tracker-core';
+```
+
+Common outputs:
+
+- `getLastWorkoutInfo`: most recent completed session summary
+- `summarizeLastWorkoutExercises`: completed exercise count, muscle summary, total sets
+- `summarizePersonalRecords`: compact PR summary text
+- `getWorkoutDateKeys` and `getWorkoutMetricsByDate`: chart inputs for week/month views
+- `getWorkoutDurationMinutes` and `getWorkoutTonnage`: period metrics
+- `getWorkoutStreaks` and `getWorkoutConsistency`: streak and consistency calculations
+
+These helpers are pure. They should not own navigation, premium checks, or widget visibility.
+
+## Exercise Queue
+
+The core package also exposes a small persisted queue store for reusable workout suggestions.
+Use it when users save exercises from details screens, insight widgets, or recovery surfaces and later build a workout from that list.
+
+```ts
+import { useExerciseQueueStore } from '@mdv/workout-tracker-core';
+
+useExerciseQueueStore.getState().addExercise({
+  exerciseId: '123',
+  name: 'Back Squat',
+  source: 'exercise_details',
+});
+```
+
+Available actions:
+
+- `addExercise`
+- `removeExercise`
+- `clearExercises`
+- `hasExercise`
+
+The store persists under `mdv.exerciseQueue.v1`.
+Keep feature gating and navigation in the host app.
 
 ## Start and Log Sessions
 
@@ -428,6 +484,7 @@ Host apps still own:
 - background sync scheduling
 - file picker/share UI
 - app-specific tables such as `weekly_plans`, dashboard widgets, users, or settings
+- queue entry points, CTA labels, and navigation
 
 ## Connect to the Tracker UI
 
@@ -493,3 +550,4 @@ Keep in the host app:
 - app-specific tables and settings
 - navigation and screen layout
 - custom analytics, widgets, and dashboards
+- queue UI placement and feature-gating decisions
