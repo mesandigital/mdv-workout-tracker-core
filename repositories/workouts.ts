@@ -116,6 +116,7 @@ async function insertWorkoutExercise(
   exercise: WorkoutTemplateExerciseInput,
   index: number,
   blockIds: Map<string, number>,
+  createdAt?: string | null,
 ) {
   const sets = normalizeSets(exercise);
   const groupType =
@@ -154,6 +155,8 @@ async function insertWorkoutExercise(
     group_id: groupId,
     group_type: groupType,
     setsArray: JSON.stringify(effectiveSets),
+    created_at: createdAt || undefined,
+    updated_at: new Date().toISOString(),
   });
 
   for (const set of effectiveSets) {
@@ -166,6 +169,8 @@ async function insertWorkoutExercise(
       planned_weight: set.planned_weight ?? null,
       duration_seconds: set.duration_seconds ?? null,
       drop_sets: JSON.stringify(set.drop_sets || []),
+      created_at: createdAt || undefined,
+      updated_at: new Date().toISOString(),
     });
   }
 }
@@ -198,6 +203,28 @@ export async function updateWorkoutTemplate(
   id: number,
   input: WorkoutTemplateInput,
 ) {
+  const existingLinks = await selectRaw<{
+    exercise_id: number;
+    created_at?: string | null;
+  }>(
+    `
+    SELECT exercise_id, created_at
+    FROM workout_exercises
+    WHERE workout_id = ? AND COALESCE(deleted, 0) = 0
+    ORDER BY order_index ASC, id ASC
+  `,
+    [id],
+  );
+  const existingByExercise = new Map<
+    number,
+    Array<string | null | undefined>
+  >();
+  existingLinks.forEach(link => {
+    const bucket = existingByExercise.get(link.exercise_id) || [];
+    bucket.push(link.created_at);
+    existingByExercise.set(link.exercise_id, bucket);
+  });
+
   await updateWhere(
     'workouts',
     {
@@ -219,8 +246,147 @@ export async function updateWorkoutTemplate(
 
   const blockIds = new Map<string, number>();
   for (let index = 0; index < input.exercises.length; index += 1) {
-    await insertWorkoutExercise(id, input.exercises[index], index, blockIds);
+    const exercise = input.exercises[index];
+    const bucket = existingByExercise.get(exercise.exercise_id);
+    const createdAt = bucket?.shift();
+    await insertWorkoutExercise(id, exercise, index, blockIds, createdAt);
   }
+}
+
+export type WorkoutTemplateExerciseHistoryItem = {
+  workoutExerciseId: number;
+  exerciseId: number;
+  exerciseName: string;
+  orderIndex: number;
+  defaultSets: number;
+  defaultReps: number;
+  weight: number | null;
+  addedAt: string;
+  updatedAt: string;
+};
+
+export type SessionAddedExerciseSuggestion = {
+  sessionId: number;
+  exerciseLogId: number;
+  exerciseId: number;
+  exerciseName: string;
+  startedAt: string;
+  finishedAt: string | null;
+  plannedSets: number | null;
+  plannedReps: number | null;
+  weight: number | null;
+};
+
+export async function getWorkoutTemplateExerciseHistory(
+  workoutId: number,
+): Promise<WorkoutTemplateExerciseHistoryItem[]> {
+  return selectRaw<WorkoutTemplateExerciseHistoryItem>(
+    `
+    SELECT
+      we.id as workoutExerciseId,
+      we.exercise_id as exerciseId,
+      COALESCE(e.name, 'Exercise') as exerciseName,
+      we.order_index as orderIndex,
+      we.default_sets as defaultSets,
+      we.default_reps as defaultReps,
+      we.weight as weight,
+      we.created_at as addedAt,
+      we.updated_at as updatedAt
+    FROM workout_exercises we
+    LEFT JOIN exercises e
+      ON e.id = we.exercise_id
+      OR e.seeded_id = CAST(we.exercise_id AS TEXT)
+    WHERE we.workout_id = ? AND COALESCE(we.deleted, 0) = 0
+    ORDER BY datetime(we.created_at) ASC, we.order_index ASC, we.id ASC
+  `,
+    [workoutId],
+  );
+}
+
+export async function getSessionAddedExerciseSuggestions(
+  workoutId: number,
+): Promise<SessionAddedExerciseSuggestion[]> {
+  return selectRaw<SessionAddedExerciseSuggestion>(
+    `
+    SELECT
+      ws.id as sessionId,
+      el.id as exerciseLogId,
+      el.exercise_id as exerciseId,
+      COALESCE(e.name, 'Exercise') as exerciseName,
+      ws.started_at as startedAt,
+      ws.finished_at as finishedAt,
+      el.planned_sets as plannedSets,
+      el.planned_reps as plannedReps,
+      el.weight as weight
+    FROM exercise_logs el
+    JOIN workout_sessions ws ON ws.id = el.workout_session_id
+    LEFT JOIN exercises e
+      ON e.id = el.exercise_id
+      OR e.seeded_id = CAST(el.exercise_id AS TEXT)
+    WHERE ws.workout_id = ?
+      AND ws.finished_at IS NOT NULL
+      AND COALESCE(el.deleted, 0) = 0
+      AND NOT EXISTS (
+        SELECT 1
+        FROM workout_exercises we
+        WHERE we.workout_id = ws.workout_id
+          AND we.exercise_id = el.exercise_id
+          AND COALESCE(we.deleted, 0) = 0
+      )
+    ORDER BY datetime(ws.started_at) DESC, COALESCE(el.order_index, el.id) ASC
+  `,
+    [workoutId],
+  );
+}
+
+export async function addExerciseToWorkoutTemplate(
+  workoutId: number,
+  exercise: {
+    exercise_id: number;
+    default_sets?: number | null;
+    default_reps?: number | null;
+    weight?: number | null;
+  },
+) {
+  const existing = await selectRawOne<{ id: number }>(
+    `
+    SELECT id
+    FROM workout_exercises
+    WHERE workout_id = ? AND exercise_id = ? AND COALESCE(deleted, 0) = 0
+    LIMIT 1
+  `,
+    [workoutId, exercise.exercise_id],
+  );
+  if (existing) return existing.id;
+
+  const row = await selectRawOne<{ nextOrder: number }>(
+    `
+    SELECT COALESCE(MAX(order_index), 0) + 1 as nextOrder
+    FROM workout_exercises
+    WHERE workout_id = ? AND COALESCE(deleted, 0) = 0
+  `,
+    [workoutId],
+  );
+  const blockIds = new Map<string, number>();
+  await insertWorkoutExercise(
+    workoutId,
+    {
+      exercise_id: exercise.exercise_id,
+      order_index: row?.nextOrder || 1,
+      default_sets: exercise.default_sets || 3,
+      default_reps: exercise.default_reps || 10,
+      weight: exercise.weight ?? 0,
+      section: 'main',
+    },
+    row?.nextOrder || 1,
+    blockIds,
+  );
+  await updateWhere(
+    'workouts',
+    { updated_at: new Date().toISOString() },
+    'id = ?',
+    [workoutId],
+  );
 }
 
 export async function getWorkoutTemplate(

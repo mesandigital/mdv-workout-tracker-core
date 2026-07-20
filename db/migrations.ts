@@ -166,6 +166,7 @@ const MIGRATIONS = [
     superset_id INTEGER,
     group_id INTEGER,
     group_type TEXT,
+    source TEXT DEFAULT 'template',
     section TEXT DEFAULT 'main',
     notes TEXT,
     deleted INTEGER DEFAULT 0,
@@ -383,6 +384,7 @@ const MIGRATION_COLUMNS: Record<string, Array<[string, string]>> = {
     ['section', "TEXT DEFAULT 'main'"],
     ['order_index', 'INTEGER'],
     ['rest_seconds', 'INTEGER'],
+    ['source', "TEXT DEFAULT 'template'"],
     ['deleted', 'INTEGER DEFAULT 0'],
     ['synced', 'INTEGER DEFAULT 0'],
     ['version', 'INTEGER DEFAULT 1'],
@@ -412,9 +414,15 @@ const MIGRATION_COLUMNS: Record<string, Array<[string, string]>> = {
   ],
 };
 
-async function addColumnIfMissing(table: string, column: string, definition: string) {
-  const columns = await selectRaw<{ name: string }>(`PRAGMA table_info(${table})`);
-  if (!columns.some((item) => item.name === column)) {
+async function addColumnIfMissing(
+  table: string,
+  column: string,
+  definition: string,
+) {
+  const columns = await selectRaw<{ name: string }>(
+    `PRAGMA table_info(${table})`,
+  );
+  if (!columns.some(item => item.name === column)) {
     await execute(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
   }
 }
@@ -425,7 +433,11 @@ export async function migrateWorkoutTrackerDb() {
       await execute(sql);
     } catch (error) {
       const statement = sql.trim().split(/\s+/).slice(0, 8).join(' ');
-      throw new Error(`Workout tracker migration ${index + 1} failed (${statement}): ${String(error)}`);
+      throw new Error(
+        `Workout tracker migration ${index + 1} failed (${statement}): ${String(
+          error,
+        )}`,
+      );
     }
   }
 
@@ -434,7 +446,11 @@ export async function migrateWorkoutTrackerDb() {
       try {
         await addColumnIfMissing(table, column, definition);
       } catch (error) {
-        throw new Error(`Workout tracker column migration failed (${table}.${column}): ${String(error)}`);
+        throw new Error(
+          `Workout tracker column migration failed (${table}.${column}): ${String(
+            error,
+          )}`,
+        );
       }
     }
   }

@@ -1,4 +1,4 @@
--- @mdv/workout-tracker-core Supabase schema
+-- mdv-workout-tracker-core Supabase schema
 -- Run this in Supabase SQL editor before enabling cloud sync.
 --
 -- Important:
@@ -186,6 +186,7 @@ create table if not exists exercise_logs (
   superset_id int,
   group_id int,
   group_type text check (group_type in ('superset', 'drop_set', 'circuit')),
+  source text default 'template',
   section text default 'main',
   notes text,
   deleted boolean not null default false,
@@ -326,6 +327,7 @@ alter table set_logs add column if not exists planned_duration_seconds int;
 alter table set_logs add column if not exists duration_seconds int;
 alter table workout_exercises add column if not exists rest_seconds int;
 alter table exercise_logs add column if not exists rest_seconds int;
+alter table exercise_logs add column if not exists source text default 'template';
 alter table personal_records add column if not exists calculation_version int not null default 1;
 alter table weekly_plans add column if not exists sync_user_id uuid default auth.uid() references auth.users(id) on delete cascade;
 alter table weekly_plan_workouts add column if not exists sync_user_id uuid default auth.uid() references auth.users(id) on delete cascade;

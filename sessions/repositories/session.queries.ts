@@ -272,6 +272,7 @@ export async function generateExerciseLogsAndSets(
         group_id: row.group_id || row.superset_id || null,
         group_type: row.group_type || (row.superset_id ? 'superset' : null),
         order_index: row.order_index ?? null,
+        source: 'template',
       });
 
       // Try to get per-set planned weights from workout_exercise_sets
@@ -774,6 +775,7 @@ export async function addExerciseToSession(
     planned_sets: 3,
     planned_reps: 10,
     weight: 0,
+    source: 'session',
   });
 }
 
@@ -1062,7 +1064,7 @@ export async function endWorkoutSession(
     for (const log of exerciseLogs) {
       if (typeof log.weight === 'number') {
         await selectRaw(
-          `UPDATE ${TABLES.workout_exercises} SET weight = ? WHERE workout_id = ? AND exercise_id = ?`,
+          `UPDATE ${TABLES.workout_exercises} SET weight = ? WHERE workout_id = ? AND exercise_id = ? AND COALESCE(deleted, 0) = 0`,
           [log.weight, workoutId, log.exercise_id],
         );
       }

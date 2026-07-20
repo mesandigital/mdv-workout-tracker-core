@@ -14,7 +14,7 @@ export function configureWorkoutTrackerDb(runSql: SqlExecutor) {
 export function getWorkoutTrackerDb(): SqlExecutor {
   if (!executor) {
     throw new Error(
-      '@mdv/workout-tracker-core database is not configured. Call configureWorkoutTrackerDb(runSql) before using repositories.',
+      'mdv-workout-tracker-core database is not configured. Call configureWorkoutTrackerDb(runSql) before using repositories.',
     );
   }
   return executor;

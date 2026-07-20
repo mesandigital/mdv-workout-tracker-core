@@ -1,6 +1,7 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Alert } from 'react-native';
 import { WorkoutSessionApi } from '../sessions';
+import { completePlannedWorkoutsForSession } from '../../../features/planner/plannerReconciliation';
 
 interface EndSessionInput {
   sessionId: number;
@@ -39,7 +40,8 @@ export function useEndWorkoutSession() {
     mutationFn: async ({ sessionId, notes }: EndSessionInput) => {
       return WorkoutSessionApi.endWorkoutSession(sessionId, notes);
     },
-    onSuccess: (_, variables) => {
+    onSuccess: async (_, variables) => {
+      await completePlannedWorkoutsForSession(variables.sessionId);
       // Invalidate relevant queries
       queryClient.invalidateQueries({
         queryKey: ['workoutSession', variables.sessionId]
@@ -75,6 +77,15 @@ export function useEndWorkoutSession() {
       });
       queryClient.invalidateQueries({
         queryKey: ['workoutDetails']
+      });
+      queryClient.invalidateQueries({
+        queryKey: ['weeklyPlans']
+      });
+      queryClient.invalidateQueries({
+        queryKey: ['weeklyPlanWorkouts']
+      });
+      queryClient.invalidateQueries({
+        queryKey: ['todaysWorkout']
       });
     },
     onError: (error) => {

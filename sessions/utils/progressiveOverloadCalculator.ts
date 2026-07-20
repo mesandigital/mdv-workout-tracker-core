@@ -6,6 +6,7 @@ export type ProgressiveOverloadReasonCode =
   | 'eligible_duration'
   | 'maintain'
   | 'incomplete_sets'
+  | 'incomplete_reps'
   | 'incomplete_drop_sets'
   | 'no_sets'
   | 'no_progression_target'
@@ -93,6 +94,37 @@ const isSetComplete = (set: SetRow) =>
 const isDropComplete = (drop: NonNullable<SetRow['dropSets']>[number]) =>
   Boolean(drop.completed) || typeof drop.reps === 'number';
 
+const getTargetReps = (
+  set: SetRow,
+  exercise: Pick<HydratedExercise, 'plannedReps'>,
+) => {
+  const target = set.plannedReps ?? set.planned_reps ?? exercise.plannedReps;
+  return typeof target === 'number' && Number.isFinite(target) ? target : null;
+};
+
+const isSetProgressionTargetMet = (
+  set: SetRow,
+  exercise: Pick<HydratedExercise, 'plannedReps'>,
+) => {
+  if (isTimedSet(set)) {
+    const target = set.plannedDurationSeconds ?? null;
+    if (typeof target !== 'number' || target <= 0) return isSetComplete(set);
+    return typeof set.durationSeconds === 'number' && set.durationSeconds >= target;
+  }
+
+  const targetReps = getTargetReps(set, exercise);
+  if (typeof targetReps !== 'number' || targetReps <= 0) return isSetComplete(set);
+  return typeof set.reps === 'number' && set.reps >= targetReps;
+};
+
+const isDropProgressionTargetMet = (
+  drop: NonNullable<SetRow['dropSets']>[number],
+) => {
+  const targetReps = drop.plannedReps ?? null;
+  if (typeof targetReps !== 'number' || targetReps <= 0) return isDropComplete(drop);
+  return typeof drop.reps === 'number' && drop.reps >= targetReps;
+};
+
 const formatNumber = (value: number | null) =>
   typeof value === 'number' ? String(Math.round(value * 100) / 100) : '—';
 
@@ -164,6 +196,8 @@ const getPrimaryReasonLabel = (
       )}s to ${formatNumber(values?.to ?? null)}s.`;
     case 'incomplete_sets':
       return 'Complete every set before progressing this exercise.';
+    case 'incomplete_reps':
+      return 'Complete all planned reps on every set before increasing the target.';
     case 'incomplete_drop_sets':
       return 'Complete all drop sets before progressing this exercise.';
     case 'no_sets':
@@ -206,8 +240,14 @@ export function calculateProgressiveOverloadRecommendations(
     const bodyweight = isBodyweightExercise(exercise);
     const anyTimed = sets.some(isTimedSet);
     const allSetsCompleted = sets.length > 0 && sets.every(isSetComplete);
+    const allProgressionTargetsMet =
+      sets.length > 0 &&
+      sets.every(set => isSetProgressionTargetMet(set, exercise));
     const allDropSetsCompleted = sets.every(set =>
       (set.dropSets || []).every(isDropComplete),
+    );
+    const allDropSetTargetsMet = sets.every(set =>
+      (set.dropSets || []).every(isDropProgressionTargetMet),
     );
     const equipmentIncrement = getEquipmentIncrement(
       exercise,
@@ -260,7 +300,25 @@ export function calculateProgressiveOverloadRecommendations(
         null,
         0,
       );
+    if (!allProgressionTargetsMet)
+      return makeRecommendation(
+        false,
+        'incomplete_reps',
+        'maintain',
+        null,
+        null,
+        0,
+      );
     if (!allDropSetsCompleted)
+      return makeRecommendation(
+        false,
+        'incomplete_drop_sets',
+        'maintain',
+        null,
+        null,
+        0,
+      );
+    if (!allDropSetTargetsMet)
       return makeRecommendation(
         false,
         'incomplete_drop_sets',

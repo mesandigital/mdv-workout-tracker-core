@@ -132,6 +132,7 @@ export async function generateExerciseLogsAndSets(
       planned_reps: exercise.default_reps,
       weight: exercise.weight,
       rest_seconds: exercise.rest_seconds ?? null,
+      source: 'template',
       section: exercise.section || 'main',
       order_index: exercise.order_index,
       superset_id: exercise.superset_id || null,
@@ -733,7 +734,7 @@ export async function endWorkoutSession(
       await updateWhere(
         'workout_exercises',
         { weight: log.weight, updated_at: new Date().toISOString() },
-        'workout_id = ? AND exercise_id = ?',
+        'workout_id = ? AND exercise_id = ? AND COALESCE(deleted, 0) = 0',
         [session.workout_id, log.exercise_id],
       );
     }

@@ -8,6 +8,7 @@ export type CompletedWorkoutExerciseSummary = {
 export type LastWorkoutSummary = {
   completedExercises: CompletedWorkoutExerciseSummary[];
   primaryMuscles: string[];
+  skippedPrimaryMuscles: string[];
   totalSets: number;
 };
 
@@ -23,6 +24,7 @@ export function summarizeLastWorkoutExercises(
   } = {},
 ): LastWorkoutSummary {
   const primaryMuscles: string[] = [];
+  const skippedPrimaryMuscles: string[] = [];
   let totalSets = 0;
 
   const completedExercises = Array.isArray(exercises)
@@ -32,20 +34,25 @@ export function summarizeLastWorkoutExercises(
         : 0;
       totalSets += setsCompleted;
 
-      const primaryMuscleKey = options.getMuscleKey?.(exercise?.primaryMuscle) || exercise?.primaryMuscle || '';
+      const rawPrimaryMuscle = exercise?.primaryMuscle || exercise?.primary_muscle || '';
+      const primaryMuscleKey = options.getMuscleKey?.(rawPrimaryMuscle) || rawPrimaryMuscle;
       const primaryMuscle = primaryMuscleKey
         ? options.normalizeMuscleName?.(primaryMuscleKey, true) || primaryMuscleKey
         : '';
 
-      if (primaryMuscle && !primaryMuscles.includes(primaryMuscle)) {
+      if (setsCompleted > 0 && primaryMuscle && !primaryMuscles.includes(primaryMuscle)) {
         primaryMuscles.push(primaryMuscle);
+      }
+
+      if (setsCompleted === 0 && primaryMuscle && !skippedPrimaryMuscles.includes(primaryMuscle)) {
+        skippedPrimaryMuscles.push(primaryMuscle);
       }
 
       return {
         name: exercise?.name,
         setsCompleted,
         muscleGroups: primaryMuscle ? [primaryMuscle] : [],
-        unNormalizedPrimaryMuscle: exercise?.primaryMuscle ? [exercise.primaryMuscle] : [],
+        unNormalizedPrimaryMuscle: rawPrimaryMuscle ? [rawPrimaryMuscle] : [],
       };
     }).filter(exercise => exercise.setsCompleted > 0)
     : [];
@@ -53,6 +60,9 @@ export function summarizeLastWorkoutExercises(
   return {
     completedExercises,
     primaryMuscles,
+    skippedPrimaryMuscles: skippedPrimaryMuscles.filter(
+      muscle => !primaryMuscles.includes(muscle),
+    ),
     totalSets,
   };
 }

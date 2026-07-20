@@ -1,5 +1,6 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { WorkoutSessionApi } from '../sessions';
+import { completePlannedWorkoutsForSession } from '../../../features/planner/plannerReconciliation';
 
 interface EndSessionWithDurationInput {
   sessionId: number;
@@ -11,44 +12,72 @@ export function useEndWorkoutSessionWithDuration() {
   const queryClient = useQueryClient();
 
   const mutation = useMutation({
-    mutationFn: async ({ sessionId, notes, startedAt }: EndSessionWithDurationInput) => {
+    mutationFn: async ({
+      sessionId,
+      notes,
+      startedAt,
+    }: EndSessionWithDurationInput) => {
       // Calculate duration in seconds
       const finishedAt = new Date().toISOString();
       const start = new Date(startedAt).getTime();
       const end = new Date(finishedAt).getTime();
       const duration = Math.floor((end - start) / 1000); // seconds
-      return WorkoutSessionApi.endWorkoutSession(sessionId, notes, finishedAt, duration);
+      return WorkoutSessionApi.endWorkoutSession(
+        sessionId,
+        notes,
+        finishedAt,
+        duration,
+      );
     },
-    onSuccess: (_, variables) => {
+    onSuccess: async (_, variables) => {
+      await completePlannedWorkoutsForSession(variables.sessionId);
       queryClient.invalidateQueries({
-        queryKey: ['workoutSession', variables.sessionId]
+        queryKey: ['workoutSession', variables.sessionId],
       });
       queryClient.setQueryData(['anyActiveWorkoutSession'], null);
       queryClient.setQueriesData({ queryKey: ['activeWorkoutSession'] }, null);
       queryClient.invalidateQueries({
-        queryKey: ['activeWorkoutSession']
+        queryKey: ['activeWorkoutSession'],
       });
       queryClient.invalidateQueries({
-        queryKey: ['anyActiveWorkoutSession']
+        queryKey: ['anyActiveWorkoutSession'],
       });
       queryClient.invalidateQueries({
-        queryKey: ['workouts']
+        queryKey: ['workouts'],
       });
       queryClient.invalidateQueries({
-        queryKey: ['workoutLogs']
+        queryKey: ['workoutDetails'],
       });
       queryClient.invalidateQueries({
-        queryKey: ['workoutStreak']
+        queryKey: ['workoutTemplateExerciseHistory'],
+      });
+      queryClient.invalidateQueries({
+        queryKey: ['sessionAddedExerciseSuggestions'],
+      });
+      queryClient.invalidateQueries({
+        queryKey: ['workoutLogs'],
+      });
+      queryClient.invalidateQueries({
+        queryKey: ['workoutStreak'],
+      });
+      queryClient.invalidateQueries({
+        queryKey: ['weeklyPlans'],
+      });
+      queryClient.invalidateQueries({
+        queryKey: ['weeklyPlanWorkouts'],
+      });
+      queryClient.invalidateQueries({
+        queryKey: ['todaysWorkout'],
       });
     },
-    onError: (error) => {
+    onError: error => {
       console.error('Failed to end workout session with duration:', error);
-    }
+    },
   });
 
   return {
     endWorkoutWithDurationAsync: mutation.mutateAsync,
     isLoading: mutation.isPending,
-    error: mutation.error
+    error: mutation.error,
   };
 }
