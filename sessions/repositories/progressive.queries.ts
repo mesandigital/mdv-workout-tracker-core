@@ -295,6 +295,26 @@ const getTemplateValueForColumn = (
   return null;
 };
 
+const resolveProgressiveOverloadTemplateValue = (
+  update: ProgressiveOverloadTemplateUpdate,
+  currentTemplateValue: number | null,
+) => {
+  if (update.field === 'drop_sets') return update.recommendedValue ?? null;
+
+  const sessionTarget = update.currentValue;
+  const recommendedTarget = update.recommendedValue;
+
+  if (
+    typeof sessionTarget === 'number' &&
+    (currentTemplateValue === null || sessionTarget > currentTemplateValue) &&
+    (recommendedTarget === null || sessionTarget < recommendedTarget)
+  ) {
+    return sessionTarget;
+  }
+
+  return recommendedTarget ?? null;
+};
+
 async function applyRecommendationTemplateUpdates(
   sessionId: number,
   workoutId: number,
@@ -306,13 +326,6 @@ async function applyRecommendationTemplateUpdates(
     if (!recommendation.eligible) continue;
     for (const update of recommendation.templateUpdates) {
       const column = getTemplateColumnForUpdate(update);
-      const value =
-        column === 'drop_sets'
-          ? JSON.stringify(update.dropSets || [])
-          : update.recommendedValue;
-
-      if (value === undefined) continue;
-
       const existingTemplateSet = await selectRawOne<{
         planned_weight: number | null;
         planned_reps: number | null;
@@ -325,6 +338,20 @@ async function applyRecommendationTemplateUpdates(
         `,
         [workoutId, update.exerciseId, update.setNumber],
       );
+      const previousValue = getTemplateValueForColumn(
+        existingTemplateSet,
+        column,
+      );
+      const nextValue = resolveProgressiveOverloadTemplateValue(
+        update,
+        previousValue,
+      );
+      const value =
+        column === 'drop_sets'
+          ? JSON.stringify(update.dropSets || [])
+          : nextValue;
+
+      if (value === undefined) continue;
 
       await updateWhere(
         'workout_exercise_sets',
@@ -371,10 +398,8 @@ async function applyRecommendationTemplateUpdates(
           update.exerciseLogId ?? recommendation.exerciseLogId ?? null,
           update.setNumber,
           update.field,
-          update.field === 'drop_sets'
-            ? null
-            : getTemplateValueForColumn(existingTemplateSet, column),
-          update.field === 'drop_sets' ? null : update.recommendedValue ?? null,
+          update.field === 'drop_sets' ? null : previousValue,
+          update.field === 'drop_sets' ? null : nextValue,
           recommendation.recommendationType,
           recommendation.reasonCode,
           update.dropSets?.length ? JSON.stringify(update.dropSets) : null,

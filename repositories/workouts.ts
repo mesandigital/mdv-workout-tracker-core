@@ -277,6 +277,29 @@ export type SessionAddedExerciseSuggestion = {
   weight: number | null;
 };
 
+export type WorkoutTemplateProgressiveOverloadHistoryChange = {
+  exerciseId: number;
+  exerciseName: string;
+  exerciseLogId: number | null;
+  setNumber: number;
+  field: string;
+  previousValue: number | null;
+  newValue: number | null;
+  recommendationType: string;
+  reasonCode: string;
+};
+
+export type WorkoutTemplateProgressiveOverloadHistoryEvent = {
+  workoutId: number;
+  sessionId: number;
+  appliedAt: string;
+  startedAt: string | null;
+  finishedAt: string | null;
+  changeCount: number;
+  exerciseCount: number;
+  changes: WorkoutTemplateProgressiveOverloadHistoryChange[];
+};
+
 export async function getWorkoutTemplateExerciseHistory(
   workoutId: number,
 ): Promise<WorkoutTemplateExerciseHistoryItem[]> {
@@ -301,6 +324,101 @@ export async function getWorkoutTemplateExerciseHistory(
   `,
     [workoutId],
   );
+}
+
+export async function getWorkoutTemplateProgressiveOverloadHistory(
+  workoutId: number,
+): Promise<WorkoutTemplateProgressiveOverloadHistoryEvent[]> {
+  const { ensureProgressiveOverloadApplicationsTable } = await import(
+    '../sessions/repositories/progressive.queries'
+  );
+  await ensureProgressiveOverloadApplicationsTable();
+
+  const rows = await selectRaw<{
+    workoutId: number;
+    sessionId: number;
+    exerciseId: number;
+    exerciseName: string;
+    exerciseLogId: number | null;
+    setNumber: number;
+    field: string;
+    previousValue: number | null;
+    newValue: number | null;
+    recommendationType: string;
+    reasonCode: string;
+    appliedAt: string;
+    startedAt: string | null;
+    finishedAt: string | null;
+  }>(
+    `
+    SELECT
+      poa.workout_id as workoutId,
+      poa.workout_session_id as sessionId,
+      poa.exercise_id as exerciseId,
+      COALESCE(e.name, 'Exercise') as exerciseName,
+      poa.exercise_log_id as exerciseLogId,
+      poa.set_number as setNumber,
+      poa.field as field,
+      poa.previous_value as previousValue,
+      poa.new_value as newValue,
+      poa.recommendation_type as recommendationType,
+      poa.reason_code as reasonCode,
+      poa.applied_at as appliedAt,
+      ws.started_at as startedAt,
+      ws.finished_at as finishedAt
+    FROM progressive_overload_applications poa
+    LEFT JOIN workout_sessions ws ON ws.id = poa.workout_session_id
+    LEFT JOIN exercises e
+      ON e.id = poa.exercise_id
+      OR e.seeded_id = CAST(poa.exercise_id AS TEXT)
+    WHERE poa.workout_id = ?
+    ORDER BY datetime(poa.applied_at) DESC, poa.workout_session_id DESC, poa.exercise_id ASC, poa.set_number ASC, poa.field ASC
+  `,
+    [workoutId],
+  );
+
+  const events = new Map<
+    string,
+    {
+      workoutId: number;
+      sessionId: number;
+      appliedAt: string;
+      startedAt: string | null;
+      finishedAt: string | null;
+      changes: WorkoutTemplateProgressiveOverloadHistoryChange[];
+    }
+  >();
+
+  rows.forEach(row => {
+    const key = `${row.sessionId}-${row.appliedAt}`;
+    const event = events.get(key) || {
+      workoutId: row.workoutId,
+      sessionId: row.sessionId,
+      appliedAt: row.appliedAt,
+      startedAt: row.startedAt,
+      finishedAt: row.finishedAt,
+      changes: [],
+    };
+
+    event.changes.push({
+      exerciseId: row.exerciseId,
+      exerciseName: row.exerciseName,
+      exerciseLogId: row.exerciseLogId,
+      setNumber: row.setNumber,
+      field: row.field,
+      previousValue: row.previousValue,
+      newValue: row.newValue,
+      recommendationType: row.recommendationType,
+      reasonCode: row.reasonCode,
+    });
+    events.set(key, event);
+  });
+
+  return Array.from(events.values()).map(event => ({
+    ...event,
+    changeCount: event.changes.length,
+    exerciseCount: new Set(event.changes.map(change => change.exerciseId)).size,
+  }));
 }
 
 export async function getSessionAddedExerciseSuggestions(
