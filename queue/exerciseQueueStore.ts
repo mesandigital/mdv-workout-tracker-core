@@ -27,6 +27,7 @@ type ExerciseQueueState = {
   addExercise: (item: Omit<ExerciseQueueItem, 'addedAt'>) => void;
   removeExercise: (exerciseId: string) => void;
   clearExercises: () => void;
+  replaceExercises: (items: Omit<ExerciseQueueItem, 'addedAt'>[]) => void;
   hasExercise: (exerciseId: string) => boolean;
 };
 
@@ -54,6 +55,14 @@ export const useExerciseQueueStore = create<ExerciseQueueState>()(
           items: state.items.filter(item => item.exerciseId !== String(exerciseId)),
         })),
       clearExercises: () => set({ items: [] }),
+      replaceExercises: items =>
+        set({
+          items: items.map((item, index) => ({
+            ...item,
+            exerciseId: String(item.exerciseId),
+            addedAt: Date.now() + index,
+          })),
+        }),
       hasExercise: exerciseId =>
         get().items.some(item => item.exerciseId === String(exerciseId)),
     }),

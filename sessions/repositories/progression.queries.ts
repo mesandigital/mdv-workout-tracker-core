@@ -1,5 +1,6 @@
 import { selectRaw, selectRawOne } from '../../db';
 import { getExercise } from '../../repositories/exercises';
+import { parseSecondaryMuscles } from '../../../WorkoutTracker/utils/parseSecondaryMuscles';
 
 type WeightProgressionData = {
   exerciseId: number;
@@ -359,27 +360,7 @@ export async function fetchExerciseWeightProgression(
     };
     const rawSecondaryMuscles =
       exerciseFields.secondaryMuscles ?? exerciseFields.secondary_muscles;
-
-    let secondaryMuscles: string[] = [];
-    if (Array.isArray(rawSecondaryMuscles)) {
-      secondaryMuscles = rawSecondaryMuscles;
-    } else if (rawSecondaryMuscles) {
-      try {
-        // Try to parse as JSON array
-        const parsed = JSON.parse(rawSecondaryMuscles);
-        if (Array.isArray(parsed)) {
-          secondaryMuscles = parsed.map(m =>
-            typeof m === 'string' ? m.replace(/^"|"$/g, '') : m,
-          );
-        } else {
-          // fallback: treat as comma-separated string
-          secondaryMuscles = rawSecondaryMuscles.split(',').map(m => m.trim());
-        }
-      } catch {
-        // fallback: treat as comma-separated string
-        secondaryMuscles = rawSecondaryMuscles.split(',').map(m => m.trim());
-      }
-    }
+    const secondaryMuscles = parseSecondaryMuscles(rawSecondaryMuscles);
 
     return {
       ...exerciseInfo,
