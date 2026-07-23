@@ -1,4 +1,4 @@
-export const WORKOUT_TRACKER_SCHEMA_VERSION = 3;
+export const WORKOUT_TRACKER_SCHEMA_VERSION = 4;
 
 export const WORKOUT_TRACKER_TABLES = [
   'exercises',
@@ -6,6 +6,7 @@ export const WORKOUT_TRACKER_TABLES = [
   'workout_blocks',
   'workout_exercises',
   'workout_exercise_sets',
+  'workout_template_history',
   'workout_sessions',
   'exercise_logs',
   'set_logs',
@@ -77,6 +78,15 @@ export const WORKOUT_TRACKER_TABLE_DEFINITIONS: Record<WorkoutTrackerTableName, 
     primaryKey: 'id',
     timestampColumn: 'updated_at',
     softDeleteColumn: 'deleted',
+  },
+  workout_template_history: {
+    name: 'workout_template_history',
+    exportOrder: 45,
+    importOrder: 45,
+    clearOrder: 35,
+    syncOrder: 45,
+    primaryKey: 'id',
+    timestampColumn: 'updated_at',
   },
   workout_sessions: {
     name: 'workout_sessions',
