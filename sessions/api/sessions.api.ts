@@ -120,7 +120,7 @@ export const WorkoutSessionApi = {
   },
   updateExerciseLog: async (
     exerciseLogId: number,
-    weight?: number,
+    weight?: number | null,
     plannedReps?: number,
   ) => {
     await updateExerciseLog(exerciseLogId, weight, plannedReps);
@@ -156,7 +156,7 @@ export const WorkoutSessionApi = {
   updateSetLog: async (
     setId: number,
     plannedReps: number,
-    weight: number,
+    weight: number | null,
     reps?: number,
     dropSets?: HydratedExercise['sets'][number]['dropSets'],
     plannedDurationSeconds?: number | null,

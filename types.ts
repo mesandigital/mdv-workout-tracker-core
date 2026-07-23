@@ -132,6 +132,7 @@ export type WorkoutDropSetInput = {
 
 export type WorkoutTemplateExerciseInput = {
   exercise_id: number;
+  exercise_type?: string | null;
   block_id?: number | null;
   block_type?: WorkoutBlockType | null;
   block_name?: string | null;

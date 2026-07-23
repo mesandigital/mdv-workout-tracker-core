@@ -13,6 +13,7 @@ import type {
   WorkoutSession,
 } from '../types';
 import { persistPersonalRecordsForSession } from './personalRecords';
+import { normalizePlannedWeight } from '../utils';
 
 const parseTemplateSets = (value: string | null | undefined) => {
   if (!value) return [];
@@ -54,11 +55,15 @@ const createSessionDropSets = (value: unknown) =>
   });
 
 const buildDefaultSets = (exercise: any) => {
+  const weight = normalizePlannedWeight(
+    exercise.exercise_type,
+    exercise.weight ?? null,
+  );
   const totalSets = Math.max(1, Math.round(Number(exercise.default_sets) || 1));
   return Array.from({ length: totalSets }, (_, index) => ({
     set_number: index + 1,
     planned_reps: exercise.default_reps || 1,
-    planned_weight: exercise.weight ?? null,
+    planned_weight: weight,
     duration_seconds: null,
     drop_sets: [],
   }));
@@ -97,6 +102,7 @@ export async function generateExerciseLogsAndSets(
     SELECT
       we.*,
       COALESCE(e.id, we.exercise_id) as exercise_id,
+      e.exercise_type as exercise_type,
       wb.type as block_type,
       wb.name as block_name,
       wb.rounds as block_rounds,
@@ -114,6 +120,10 @@ export async function generateExerciseLogsAndSets(
   );
 
   for (const exercise of templateExercises) {
+    const exerciseWeight = normalizePlannedWeight(
+      exercise.exercise_type,
+      exercise.weight ?? null,
+    );
     const exerciseLogId = await insert('exercise_logs', {
       workout_session_id: sessionId,
       block_id: exercise.block_id || null,
@@ -130,7 +140,7 @@ export async function generateExerciseLogsAndSets(
           ? exercise.block_rounds || 1
           : exercise.default_sets,
       planned_reps: exercise.default_reps,
-      weight: exercise.weight,
+      weight: exerciseWeight,
       rest_seconds: exercise.rest_seconds ?? null,
       source: 'template',
       section: exercise.section || 'main',
@@ -218,12 +228,13 @@ export async function generateExerciseLogsAndSets(
           set.duration_seconds ?? set.durationSeconds ?? null,
         duration_seconds: null,
         reps: null,
-        weight:
+        weight: normalizePlannedWeight(
+          exercise.exercise_type,
           set.planned_weight ??
-          set.plannedWeight ??
-          set.weight ??
-          exercise.weight ??
-          null,
+            set.plannedWeight ??
+            set.weight ??
+            exerciseWeight,
+        ),
         completed: 0,
         drop_sets: JSON.stringify(
           createSessionDropSets(set.drop_sets || set.dropSets),

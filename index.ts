@@ -11,3 +11,4 @@ export * from './repositories';
 export { workoutTrackerSessions };
 export * from './sync';
 export * from './types';
+export * from './utils';

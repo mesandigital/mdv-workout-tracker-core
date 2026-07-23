@@ -4,6 +4,7 @@ import {
   generateExerciseLogsAndSets,
   getActiveSession,
 } from './session.queries';
+import { normalizeExerciseType, normalizePlannedWeight } from '../../utils';
 
 type RemoteExercise = {
   id: number;
@@ -41,6 +42,7 @@ type ProgramExerciseSnapshot = {
   section?: string | null;
   default_sets: number;
   default_reps: number;
+  exercise_type?: string | null;
   weight?: number | null;
   superset_id?: number | null;
   sets?: ProgramExerciseSetSnapshot[];
@@ -296,6 +298,13 @@ export async function importProgramWorkoutSnapshot(
       programExercise.sets ||
       programExercise.workout_program_exercise_sets ||
       [];
+    const exerciseType = normalizeExerciseType(
+      remoteExercise?.exercise_type || programExercise.exercise_type,
+    );
+    const weight = normalizePlannedWeight(
+      exerciseType,
+      programExercise.weight ?? null,
+    );
     await insert('workout_exercises', {
       user_id: snapshot.userId || null,
       tenant_id: snapshot.organizationId,
@@ -307,7 +316,7 @@ export async function importProgramWorkoutSnapshot(
       order_index: programExercise.order_index || 0,
       default_sets: programExercise.default_sets || sets.length || 1,
       default_reps: programExercise.default_reps || sets[0]?.planned_reps || 1,
-      weight: programExercise.weight || 0,
+      weight,
       section: programExercise.section || 'main',
       setsArray: JSON.stringify(sets),
       deleted: 0,
@@ -321,7 +330,10 @@ export async function importProgramWorkoutSnapshot(
         exercise_id: localExerciseId,
         set_number: set.set_number,
         planned_reps: set.planned_reps || programExercise.default_reps || 1,
-        planned_weight: set.planned_weight ?? programExercise.weight ?? null,
+        planned_weight: normalizePlannedWeight(
+          exerciseType,
+          set.planned_weight ?? weight,
+        ),
         duration_seconds: set.duration_seconds ?? null,
         deleted: 0,
         synced: 1,
@@ -354,6 +366,13 @@ export async function importWorkoutTemplateSnapshot(
       templateExercise.sets ||
       templateExercise.workout_program_exercise_sets ||
       [];
+    const exerciseType = normalizeExerciseType(
+      remoteExercise?.exercise_type || templateExercise.exercise_type,
+    );
+    const weight = normalizePlannedWeight(
+      exerciseType,
+      templateExercise.weight ?? null,
+    );
     await insert('workout_exercises', {
       user_id: snapshot.userId || null,
       tenant_id: snapshot.organizationId || null,
@@ -365,7 +384,7 @@ export async function importWorkoutTemplateSnapshot(
       order_index: templateExercise.order_index || 0,
       default_sets: templateExercise.default_sets || sets.length || 1,
       default_reps: templateExercise.default_reps || sets[0]?.planned_reps || 1,
-      weight: templateExercise.weight || 0,
+      weight,
       section: templateExercise.section || 'main',
       setsArray: JSON.stringify(sets),
       deleted: 0,
@@ -379,7 +398,10 @@ export async function importWorkoutTemplateSnapshot(
         exercise_id: localExerciseId,
         set_number: set.set_number,
         planned_reps: set.planned_reps || templateExercise.default_reps || 1,
-        planned_weight: set.planned_weight ?? templateExercise.weight ?? null,
+        planned_weight: normalizePlannedWeight(
+          exerciseType,
+          set.planned_weight ?? weight,
+        ),
         duration_seconds: set.duration_seconds ?? null,
         deleted: 0,
         synced: 1,

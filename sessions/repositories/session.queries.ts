@@ -16,6 +16,7 @@ import {
 } from '../../db';
 import { getExerciseSessionStats } from '../utils/getPreviousExerciseSessionStats';
 import { repairWorkoutSessionBlocks } from '../../repositories/sessions';
+import { normalizePlannedWeight } from '../../utils';
 
 const TABLES = {
   workouts: 'workouts',
@@ -212,6 +213,7 @@ export async function generateExerciseLogsAndSets(
       default_sets: number;
       default_reps: number;
       weight: number | null;
+      exercise_type?: string | null;
       superset_id?: number | null;
       group_id?: number | null;
       group_type?: 'superset' | 'drop_set' | 'circuit' | null;
@@ -231,6 +233,7 @@ export async function generateExerciseLogsAndSets(
       we.default_reps,
       we.setsArray,
       we.weight,
+      e.exercise_type,
       we.superset_id,
       we.group_id,
       we.group_type,
@@ -251,6 +254,10 @@ export async function generateExerciseLogsAndSets(
     }
 
     for (const row of templateExercises) {
+      const rowWeight = normalizePlannedWeight(
+        row.exercise_type,
+        row.weight ?? null,
+      );
       const exerciseLogId = await insert('exercise_logs', {
         workout_session_id: sessionId,
         block_id: row.block_id || null,
@@ -267,7 +274,7 @@ export async function generateExerciseLogsAndSets(
             ? row.block_rounds || 1
             : row.default_sets,
         planned_reps: row.default_reps,
-        weight: row.weight,
+        weight: rowWeight,
         superset_id: row.superset_id || null,
         group_id: row.group_id || row.superset_id || null,
         group_type: row.group_type || (row.superset_id ? 'superset' : null),
@@ -304,7 +311,10 @@ export async function generateExerciseLogsAndSets(
             planned_reps: set.plannedReps,
             planned_duration_seconds: set.duration_seconds ?? null,
             duration_seconds: null,
-            weight: set.planned_weight,
+            weight: normalizePlannedWeight(
+              row.exercise_type,
+              set.planned_weight,
+            ),
             drop_sets: JSON.stringify(createSessionDropSets(set.drop_sets)),
           });
         }
@@ -316,7 +326,7 @@ export async function generateExerciseLogsAndSets(
           ? Array.from({ length: row.default_sets }, (_, i) => ({
               set_number: i + 1,
               planned_reps: row.default_reps,
-              planned_weight: row.weight,
+              planned_weight: rowWeight,
             }))
           : [];
         const setsArray =
@@ -349,10 +359,12 @@ export async function generateExerciseLogsAndSets(
               setsArray[i - 1].durationSeconds ??
               null,
             duration_seconds: null,
-            weight:
+            weight: normalizePlannedWeight(
+              row.exercise_type,
               setsArray[i - 1].planned_weight ??
-              setsArray[i - 1].weight ??
-              row.weight,
+                setsArray[i - 1].weight ??
+                rowWeight,
+            ),
             drop_sets: JSON.stringify(
               createSessionDropSets(
                 setsArray[i - 1].drop_sets || setsArray[i - 1].dropSets,
@@ -526,6 +538,7 @@ const hydrateExercisesWithLastSessionDate = async (
         primaryMuscle: ex.primary_muscle ?? null,
         secondaryMuscles: ex.secondary_muscles ?? null,
         equipment: ex.equipment ?? null,
+        exerciseType: ex.exerciseType ?? null,
         sets: setsWithLastWeightAndReps,
         image_url: ex.image_url ?? null,
         imageUrl: ex.image_url ?? null,
@@ -682,7 +695,8 @@ export interface Workout {
     name?: string;
     sets: number;
     reps: number;
-    weight?: number;
+    weight?: number | null;
+    exerciseType?: string | null;
     image_url?: string;
     supersetId?: number | null;
     setsArray?: any[];
@@ -1002,12 +1016,13 @@ export async function updateSessionDateQuery(
  */
 export async function updateExerciseLog(
   exerciseLogId: number,
-  weight?: number,
+  weight?: number | null,
   plannedReps?: number,
 ): Promise<void> {
   try {
     const updateFields: any = {};
-    if (typeof weight === 'number') updateFields.weight = weight;
+    if (typeof weight === 'number' || weight === null)
+      updateFields.weight = weight;
     if (typeof plannedReps === 'number')
       updateFields.planned_reps = plannedReps;
     if (Object.keys(updateFields).length === 0) return;
@@ -1114,7 +1129,7 @@ export async function addSetLog(
 export async function updateSetLog(
   setId: number,
   plannedReps?: number,
-  weight?: number,
+  weight?: number | null,
 ): Promise<void> {
   try {
     const updateFields: any = {};
@@ -1122,7 +1137,7 @@ export async function updateSetLog(
       updateFields.planned_reps = plannedReps;
       updateFields.reps = null; // Reset reps only if planned_reps is changed
     }
-    if (typeof weight === 'number') {
+    if (typeof weight === 'number' || weight === null) {
       updateFields.weight = weight;
     }
     if (Object.keys(updateFields).length === 0) return;

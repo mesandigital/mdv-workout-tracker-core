@@ -31,7 +31,7 @@ type AddSetLogInput = {
 type UpdateSetRowInput = {
   setId?: number;
   reps?: number;
-  weight?: number;
+  weight?: number | null;
   exerciseLogId?: number;
   plannedReps?: number;
   dropSets?: Array<{
@@ -59,11 +59,18 @@ type HydratedExercise = {
   exerciseLogId: number;
   name: string;
   plannedReps: number;
-  weight?: number;
+  weight?: number | null;
   restSeconds?: number | null;
+  exerciseType?: string | null;
   section?: string | null;
   blockId?: number | null;
-  blockType?: 'straight_sets' | 'circuit' | 'superset' | 'giant_set' | 'interval' | null;
+  blockType?:
+    | 'straight_sets'
+    | 'circuit'
+    | 'superset'
+    | 'giant_set'
+    | 'interval'
+    | null;
   blockName?: string | null;
   blockRounds?: number | null;
   blockRestBetweenRounds?: number | null;
@@ -110,7 +117,11 @@ type ActiveWorkoutSessionController = {
   updateSetRow: (data: UpdateSetRowInput) => Promise<any>;
   updateCompletedRep: (data: UpdateCompletedRepInput) => Promise<any>;
   deleteSession: (sessionId: number) => Promise<any>;
-  endSession: (sessionId: number, notes?: string, notificationContext?: any) => Promise<any>;
+  endSession: (
+    sessionId: number,
+    notes?: string,
+    notificationContext?: any,
+  ) => Promise<any>;
   checkCompletion: (sessionId: number | null) => Promise<any>;
   applyPOAsync: (data: any) => Promise<any>;
   refetchActiveSession?: () => Promise<any>;
@@ -127,15 +138,18 @@ export type CreateWorkoutTrackerCoreAdapterOptions = {
   progressionIncrement?: number;
 };
 
-const mapSessionExercises = (session: HydratedWorkoutSession | null): HydratedExercise[] => (
-  session?.exercises.map((exercise) => ({
+const mapSessionExercises = (
+  session: HydratedWorkoutSession | null,
+): HydratedExercise[] =>
+  session?.exercises.map(exercise => ({
     id: exercise.exerciseLogId,
     exerciseId: exercise.exerciseId,
     exerciseLogId: exercise.exerciseLogId,
     name: exercise.name,
     plannedReps: exercise.plannedReps || 0,
-    weight: exercise.weight ?? undefined,
+    weight: exercise.weight ?? null,
     restSeconds: exercise.restSeconds,
+    exerciseType: exercise.exerciseType ?? null,
     section: exercise.section,
     blockId: exercise.blockId,
     blockType: exercise.blockType,
@@ -146,7 +160,7 @@ const mapSessionExercises = (session: HydratedWorkoutSession | null): HydratedEx
     supersetId: exercise.supersetId,
     groupId: exercise.groupId,
     groupType: exercise.groupType,
-    sets: exercise.sets.map((set) => ({
+    sets: exercise.sets.map(set => ({
       id: set.id,
       exercise_log_id: set.exercise_log_id,
       planned_reps: set.plannedReps,
@@ -162,16 +176,21 @@ const mapSessionExercises = (session: HydratedWorkoutSession | null): HydratedEx
       previousBestRepsAtWeight: set.previousBestRepsAtWeight,
       previousBestVolume: set.previousBestVolume,
     })),
-  })) || []
-);
+  })) || [];
 
-export function createWorkoutTrackerCoreAdapter(options: CreateWorkoutTrackerCoreAdapterOptions = {}) {
+export function createWorkoutTrackerCoreAdapter(
+  options: CreateWorkoutTrackerCoreAdapterOptions = {},
+) {
   return {
     calculateProgressiveOverloadRecommendations,
     saveProgressiveOverloadRecommendationSnapshots,
-    saveCompletionFeedback: (feedback: { sessionId: number; formattedNotes: string }) =>
-      updateSessionNotes(feedback.sessionId, feedback.formattedNotes),
-    useActiveWorkoutSession(sessionId: number | null): ActiveWorkoutSessionController {
+    saveCompletionFeedback: (feedback: {
+      sessionId: number;
+      formattedNotes: string;
+    }) => updateSessionNotes(feedback.sessionId, feedback.formattedNotes),
+    useActiveWorkoutSession(
+      sessionId: number | null,
+    ): ActiveWorkoutSessionController {
       const [data, setData] = useState<HydratedWorkoutSession | null>(null);
       const [isLoading, setIsLoading] = useState(Boolean(sessionId));
       const [error, setError] = useState<unknown>(null);
@@ -203,88 +222,123 @@ export function createWorkoutTrackerCoreAdapter(options: CreateWorkoutTrackerCor
         loadSession();
       }, [loadSession]);
 
-      const withRefresh = useCallback(async <T,>(action: () => Promise<T>) => {
-        setIsMutating(true);
-        try {
-          const result = await action();
-          await loadSession();
-          return result;
-        } finally {
-          setIsMutating(false);
-        }
-      }, [loadSession]);
+      const withRefresh = useCallback(
+        async <T>(action: () => Promise<T>) => {
+          setIsMutating(true);
+          try {
+            const result = await action();
+            await loadSession();
+            return result;
+          } finally {
+            setIsMutating(false);
+          }
+        },
+        [loadSession],
+      );
 
       const exercises = useMemo(() => mapSessionExercises(data), [data]);
 
-      return useMemo(() => ({
-        sessionId,
-        setSessionId: options.onSessionIdChange || (() => {}),
-        isLoading,
-        exercises,
-        activeSession: data?.session || null,
-        workoutDetails: data ? {
-          id: data.session.workout_id,
-          name: data.workoutName,
-          description: data.workoutDescription,
+      return useMemo(
+        () => ({
+          sessionId,
+          setSessionId: options.onSessionIdChange || (() => {}),
+          isLoading,
           exercises,
-        } : null,
-        isSessionExercisesLoading: isLoading,
-        sessionError: error,
-        isRemovingExercise: isMutating,
-        isChecking: false,
-        isEndingWorkout: isMutating,
-        removeExercise: (exerciseLogId: number) => withRefresh(async () => {
-          await removeWhere('set_logs', 'exercise_log_id = ?', [exerciseLogId]);
-          await removeWhere('exercise_logs', 'id = ?', [exerciseLogId]);
-        }),
-        addSetLog: (input: AddSetLogInput) => withRefresh(() => addSetLog({
-          exercise_log_id: input.exerciseLogId,
-          set_number: input.setNumber,
-          planned_reps: input.plannedReps,
-          weight: input.weight,
-          completed: input.completed,
-          drop_sets: input.dropSets,
-          planned_duration_seconds: input.plannedDurationSeconds,
-          round_number: input.roundNumber,
-        })),
-        addBlockUnit: (blockId: number) => withRefresh(() => addWorkoutSessionBlockUnit(sessionId!, blockId)),
-        updateBlockRest: (blockId: number, seconds: number) => withRefresh(() => updateWorkoutSessionBlockRest(sessionId!, blockId, seconds)),
-        convertBlockToStandalone: (blockId: number) => withRefresh(() => convertWorkoutSessionBlockToStandalone(sessionId!, blockId)),
-        deleteSetLog: (setId: number) => withRefresh(() => removeWhere('set_logs', 'id = ?', [setId])),
-        updateSetRow: (input: UpdateSetRowInput) => {
-          if (!input.setId) return Promise.resolve();
+          activeSession: data?.session || null,
+          workoutDetails: data
+            ? {
+                id: data.session.workout_id,
+                name: data.workoutName,
+                description: data.workoutDescription,
+                exercises,
+              }
+            : null,
+          isSessionExercisesLoading: isLoading,
+          sessionError: error,
+          isRemovingExercise: isMutating,
+          isChecking: false,
+          isEndingWorkout: isMutating,
+          removeExercise: (exerciseLogId: number) =>
+            withRefresh(async () => {
+              await removeWhere('set_logs', 'exercise_log_id = ?', [
+                exerciseLogId,
+              ]);
+              await removeWhere('exercise_logs', 'id = ?', [exerciseLogId]);
+            }),
+          addSetLog: (input: AddSetLogInput) =>
+            withRefresh(() =>
+              addSetLog({
+                exercise_log_id: input.exerciseLogId,
+                set_number: input.setNumber,
+                planned_reps: input.plannedReps,
+                weight: input.weight,
+                completed: input.completed,
+                drop_sets: input.dropSets,
+                planned_duration_seconds: input.plannedDurationSeconds,
+                round_number: input.roundNumber,
+              }),
+            ),
+          addBlockUnit: (blockId: number) =>
+            withRefresh(() => addWorkoutSessionBlockUnit(sessionId!, blockId)),
+          updateBlockRest: (blockId: number, seconds: number) =>
+            withRefresh(() =>
+              updateWorkoutSessionBlockRest(sessionId!, blockId, seconds),
+            ),
+          convertBlockToStandalone: (blockId: number) =>
+            withRefresh(() =>
+              convertWorkoutSessionBlockToStandalone(sessionId!, blockId),
+            ),
+          deleteSetLog: (setId: number) =>
+            withRefresh(() => removeWhere('set_logs', 'id = ?', [setId])),
+          updateSetRow: (input: UpdateSetRowInput) => {
+            if (!input.setId) return Promise.resolve();
 
-          return withRefresh(() => updateSetLog(input.setId!, {
-            exercise_log_id: input.exerciseLogId,
-            planned_reps: input.plannedReps,
-            reps: input.reps,
-            weight: input.weight,
-            drop_sets: input.dropSets,
-            planned_duration_seconds: input.plannedDurationSeconds,
-            duration_seconds: input.durationSeconds,
-            completed: input.completed,
-          }));
-        },
-        updateCompletedRep: (input: UpdateCompletedRepInput) => withRefresh(() => {
-          const nextReps = input.currentReps === null
-            ? input.maxReps
-            : input.currentReps <= 1
-              ? null
-              : input.currentReps - 1;
+            return withRefresh(() =>
+              updateSetLog(input.setId!, {
+                exercise_log_id: input.exerciseLogId,
+                planned_reps: input.plannedReps,
+                reps: input.reps,
+                weight: input.weight,
+                drop_sets: input.dropSets,
+                planned_duration_seconds: input.plannedDurationSeconds,
+                duration_seconds: input.durationSeconds,
+                completed: input.completed,
+              }),
+            );
+          },
+          updateCompletedRep: (input: UpdateCompletedRepInput) =>
+            withRefresh(() => {
+              const nextReps =
+                input.currentReps === null
+                  ? input.maxReps
+                  : input.currentReps <= 1
+                  ? null
+                  : input.currentReps - 1;
 
-          return setCompletedReps(input.setId, nextReps);
+              return setCompletedReps(input.setId, nextReps);
+            }),
+          deleteSession: (id: number) => deleteWorkoutSession(id),
+          endSession: (id: number, notes?: string) =>
+            endWorkoutSession(id, notes),
+          checkCompletion: (id: number | null) =>
+            id ? checkWorkoutSessionCompletion(id) : Promise.resolve(null),
+          applyPOAsync: options.applyProgressiveOverload || (async () => null),
+          refetchActiveSession: loadSession,
+          defaultRestSeconds: options.defaultRestSeconds,
+          defaultBlockRestSeconds: options.defaultBlockRestSeconds,
+          progressionIncrement: options.progressionIncrement,
         }),
-        deleteSession: (id: number) => deleteWorkoutSession(id),
-        endSession: (id: number, notes?: string) => endWorkoutSession(id, notes),
-        checkCompletion: (id: number | null) => (
-          id ? checkWorkoutSessionCompletion(id) : Promise.resolve(null)
-        ),
-        applyPOAsync: options.applyProgressiveOverload || (async () => null),
-        refetchActiveSession: loadSession,
-        defaultRestSeconds: options.defaultRestSeconds,
-        defaultBlockRestSeconds: options.defaultBlockRestSeconds,
-        progressionIncrement: options.progressionIncrement,
-      }), [data, error, exercises, isLoading, isMutating, loadSession, sessionId, withRefresh]);
+        [
+          data,
+          error,
+          exercises,
+          isLoading,
+          isMutating,
+          loadSession,
+          sessionId,
+          withRefresh,
+        ],
+      );
     },
   };
 }

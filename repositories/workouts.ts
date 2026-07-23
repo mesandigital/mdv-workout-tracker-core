@@ -13,6 +13,7 @@ import type {
   WorkoutTemplateExerciseSetInput,
   WorkoutTemplateInput,
 } from '../types';
+import { normalizeExerciseType, normalizePlannedWeight } from '../utils';
 
 const parseJsonArray = (value: unknown) => {
   if (Array.isArray(value)) return value;
@@ -28,11 +29,15 @@ const parseJsonArray = (value: unknown) => {
 const normalizeSets = (
   exercise: WorkoutTemplateExerciseInput,
 ): WorkoutTemplateExerciseSetInput[] => {
+  const exerciseType = normalizeExerciseType(exercise.exercise_type);
   if (exercise.sets?.length) {
     return exercise.sets.map((set, index) => ({
       set_number: set.set_number || index + 1,
       planned_reps: set.planned_reps || exercise.default_reps || 1,
-      planned_weight: set.planned_weight ?? exercise.weight ?? null,
+      planned_weight: normalizePlannedWeight(
+        exerciseType,
+        set.planned_weight ?? exercise.weight ?? null,
+      ),
       duration_seconds: set.duration_seconds ?? null,
       drop_sets: Array.isArray(set.drop_sets) ? set.drop_sets : [],
     }));
@@ -42,10 +47,26 @@ const normalizeSets = (
   return Array.from({ length: totalSets }, (_, index) => ({
     set_number: index + 1,
     planned_reps: exercise.default_reps || 1,
-    planned_weight: exercise.weight ?? null,
+    planned_weight: normalizePlannedWeight(
+      exerciseType,
+      exercise.weight ?? null,
+    ),
     duration_seconds: null,
     drop_sets: [],
   }));
+};
+
+const getExerciseTypeForExerciseId = async (exerciseId: number) => {
+  const exercise = await selectRawOne<{ exercise_type?: string | null }>(
+    `
+    SELECT exercise_type
+    FROM exercises
+    WHERE id = ? OR seeded_id = CAST(? AS TEXT)
+    LIMIT 1
+  `,
+    [exerciseId, exerciseId],
+  );
+  return normalizeExerciseType(exercise?.exercise_type);
 };
 
 const normalizeBlockType = (
@@ -118,7 +139,15 @@ async function insertWorkoutExercise(
   blockIds: Map<string, number>,
   createdAt?: string | null,
 ) {
-  const sets = normalizeSets(exercise);
+  const exerciseType =
+    exercise.exercise_type ||
+    (await getExerciseTypeForExerciseId(exercise.exercise_id));
+  const normalizedExercise = {
+    ...exercise,
+    exercise_type: exerciseType,
+    weight: normalizePlannedWeight(exerciseType, exercise.weight ?? null),
+  };
+  const sets = normalizeSets(normalizedExercise);
   const groupType =
     exercise.group_type || (exercise.superset_id ? 'superset' : null);
   const groupId = exercise.group_id || exercise.superset_id || null;
@@ -133,8 +162,12 @@ async function insertWorkoutExercise(
     ? [
         {
           set_number: 1,
-          planned_reps: exercise.default_reps || sets[0]?.planned_reps || 1,
-          planned_weight: exercise.weight ?? sets[0]?.planned_weight ?? null,
+          planned_reps:
+            normalizedExercise.default_reps || sets[0]?.planned_reps || 1,
+          planned_weight: normalizePlannedWeight(
+            exerciseType,
+            normalizedExercise.weight ?? sets[0]?.planned_weight ?? null,
+          ),
           duration_seconds: sets[0]?.duration_seconds ?? null,
           drop_sets: [],
         },
@@ -144,13 +177,17 @@ async function insertWorkoutExercise(
   const workoutExerciseId = await insert('workout_exercises', {
     workout_id: workoutId,
     block_id: blockId,
-    exercise_id: exercise.exercise_id,
-    order_index: exercise.order_index ?? index,
+    exercise_id: normalizedExercise.exercise_id,
+    order_index: normalizedExercise.order_index ?? index,
     default_sets: isRoundBasedBlock(blockType) ? 1 : effectiveSets.length,
-    default_reps: exercise.default_reps || effectiveSets[0]?.planned_reps || 1,
-    weight: exercise.weight ?? effectiveSets[0]?.planned_weight ?? 0,
-    rest_seconds: exercise.rest_seconds ?? null,
-    section: exercise.section || 'main',
+    default_reps:
+      normalizedExercise.default_reps || effectiveSets[0]?.planned_reps || 1,
+    weight: normalizePlannedWeight(
+      exerciseType,
+      normalizedExercise.weight ?? effectiveSets[0]?.planned_weight ?? null,
+    ),
+    rest_seconds: normalizedExercise.rest_seconds ?? null,
+    section: normalizedExercise.section || 'main',
     superset_id: groupType === 'superset' ? groupId : null,
     group_id: groupId,
     group_type: groupType,
@@ -163,7 +200,7 @@ async function insertWorkoutExercise(
     await insert('workout_exercise_sets', {
       workout_id: workoutId,
       workout_exercise_id: workoutExerciseId,
-      exercise_id: exercise.exercise_id,
+      exercise_id: normalizedExercise.exercise_id,
       set_number: set.set_number,
       planned_reps: set.planned_reps,
       planned_weight: set.planned_weight ?? null,
@@ -507,7 +544,8 @@ async function seedLegacyWorkoutTemplateHistory(workoutId: number) {
   );
 
   for (const row of legacyRows) {
-    const timestamp = row.createdAt || row.updatedAt || new Date().toISOString();
+    const timestamp =
+      row.createdAt || row.updatedAt || new Date().toISOString();
     await insert('workout_template_history', {
       workout_id: workoutId,
       workout_session_id: null,
@@ -707,6 +745,8 @@ export async function addExerciseToWorkoutTemplate(
     workout_session_id?: number | null;
   },
 ) {
+  const exerciseType = await getExerciseTypeForExerciseId(exercise.exercise_id);
+  const weight = normalizePlannedWeight(exerciseType, exercise.weight ?? null);
   const existing = await selectRawOne<{ id: number }>(
     `
     SELECT id
@@ -731,10 +771,11 @@ export async function addExerciseToWorkoutTemplate(
     workoutId,
     {
       exercise_id: exercise.exercise_id,
+      exercise_type: exerciseType,
       order_index: row?.nextOrder || 1,
       default_sets: exercise.default_sets || 3,
       default_reps: exercise.default_reps || 10,
-      weight: exercise.weight ?? 0,
+      weight,
       section: 'main',
     },
     row?.nextOrder || 1,
@@ -755,7 +796,7 @@ export async function addExerciseToWorkoutTemplate(
     orderIndex: row?.nextOrder || 1,
     defaultSets: exercise.default_sets || 3,
     defaultReps: exercise.default_reps || 10,
-    weight: exercise.weight ?? 0,
+    weight,
   });
 }
 
@@ -783,6 +824,7 @@ export async function getWorkoutTemplate(
       e.primary_muscle as primary_muscle,
       e.secondary_muscles as secondary_muscles,
       e.equipment as equipment,
+      e.exercise_type as exercise_type,
       e.description as exercise_description,
       e.image_key as image_key,
       e.image_url as image_url,
@@ -831,6 +873,7 @@ export async function getWorkoutTemplate(
         primaryMuscle: exercise.primary_muscle,
         secondaryMuscles: parseJsonArray(exercise.secondary_muscles),
         equipment: exercise.equipment,
+        exerciseType: exercise.exercise_type,
         description: exercise.exercise_description,
         imageKey: exercise.image_key,
         imageUrl: exercise.image_url,

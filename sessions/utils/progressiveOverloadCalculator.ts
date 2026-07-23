@@ -1,4 +1,9 @@
 import type { HydratedExercise, SetRow } from '../../types';
+import {
+  isRepsOnlyExerciseType,
+  normalizeExerciseType,
+  usesDuration,
+} from '../../utils';
 
 export type ProgressiveOverloadReasonCode =
   | 'eligible_weight'
@@ -79,6 +84,12 @@ const EQUIPMENT_WEIGHT_INCREMENTS: Array<{ match: RegExp; increment: number }> =
 const BODYWEIGHT_EQUIPMENT = /bodyweight|none|mat/i;
 const LOADABLE_BODYWEIGHT_EQUIPMENT = /dip[_ -]?belt|weighted|vest|plate/i;
 
+const isDurationExercise = (exercise: Pick<HydratedExercise, 'exerciseType'>) =>
+  usesDuration(exercise.exerciseType);
+
+const isRepsOnlyExercise = (exercise: Pick<HydratedExercise, 'exerciseType'>) =>
+  isRepsOnlyExerciseType(exercise.exerciseType);
+
 const getSetNumber = (set: SetRow, index: number) =>
   set.set_number || index + 1;
 
@@ -104,16 +115,19 @@ const getTargetReps = (
 
 const isSetProgressionTargetMet = (
   set: SetRow,
-  exercise: Pick<HydratedExercise, 'plannedReps'>,
+  exercise: Pick<HydratedExercise, 'plannedReps' | 'exerciseType'>,
 ) => {
-  if (isTimedSet(set)) {
+  if (isDurationExercise(exercise) || isTimedSet(set)) {
     const target = set.plannedDurationSeconds ?? null;
     if (typeof target !== 'number' || target <= 0) return isSetComplete(set);
-    return typeof set.durationSeconds === 'number' && set.durationSeconds >= target;
+    return (
+      typeof set.durationSeconds === 'number' && set.durationSeconds >= target
+    );
   }
 
   const targetReps = getTargetReps(set, exercise);
-  if (typeof targetReps !== 'number' || targetReps <= 0) return isSetComplete(set);
+  if (typeof targetReps !== 'number' || targetReps <= 0)
+    return isSetComplete(set);
   return typeof set.reps === 'number' && set.reps >= targetReps;
 };
 
@@ -121,7 +135,8 @@ const isDropProgressionTargetMet = (
   drop: NonNullable<SetRow['dropSets']>[number],
 ) => {
   const targetReps = drop.plannedReps ?? null;
-  if (typeof targetReps !== 'number' || targetReps <= 0) return isDropComplete(drop);
+  if (typeof targetReps !== 'number' || targetReps <= 0)
+    return isDropComplete(drop);
   return typeof drop.reps === 'number' && drop.reps >= targetReps;
 };
 
@@ -158,7 +173,7 @@ export function isBodyweightExercise(
   return (
     exercise.trainingStyle === 'calisthenics' ||
     BODYWEIGHT_EQUIPMENT.test(equipment) ||
-    String(exercise.exerciseType || '').toLowerCase() === 'bodyweight'
+    normalizeExerciseType(exercise.exerciseType) === 'bodyweight'
   );
 }
 
@@ -238,7 +253,9 @@ export function calculateProgressiveOverloadRecommendations(
     );
     const hasDropSets = sets.some(set => (set.dropSets || []).length > 0);
     const bodyweight = isBodyweightExercise(exercise);
-    const anyTimed = sets.some(isTimedSet);
+    const repsOnly = isRepsOnlyExercise(exercise);
+    const durationBased = isDurationExercise(exercise);
+    const anyTimed = durationBased || sets.some(isTimedSet);
     const allSetsCompleted = sets.length > 0 && sets.every(isSetComplete);
     const allProgressionTargetsMet =
       sets.length > 0 &&
@@ -329,7 +346,7 @@ export function calculateProgressiveOverloadRecommendations(
       );
 
     if (anyTimed) {
-      const timedSets = sets.filter(isTimedSet);
+      const timedSets = durationBased ? sets : sets.filter(isTimedSet);
       const currentValue = Math.max(
         ...timedSets.map(
           set => set.durationSeconds ?? set.plannedDurationSeconds ?? 0,
@@ -358,7 +375,7 @@ export function calculateProgressiveOverloadRecommendations(
       );
     }
 
-    if (bodyweight) {
+    if (bodyweight || repsOnly) {
       const currentValue = Math.max(
         ...sets.map(
           set => set.reps ?? set.plannedReps ?? exercise.plannedReps ?? 0,
