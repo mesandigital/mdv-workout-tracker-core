@@ -1,6 +1,6 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { WorkoutSessionApi } from '../sessions';
-import { completePlannedWorkoutsForSession } from '../../../features/planner/plannerReconciliation';
+import { runWorkoutSessionCompletionHandler } from './sessionCompletionHandler';
 
 interface EndSessionWithDurationInput {
   sessionId: number;
@@ -30,7 +30,7 @@ export function useEndWorkoutSessionWithDuration() {
       );
     },
     onSuccess: async (_, variables) => {
-      await completePlannedWorkoutsForSession(variables.sessionId);
+      await runWorkoutSessionCompletionHandler(variables.sessionId);
       queryClient.invalidateQueries({
         queryKey: ['workoutSession', variables.sessionId],
       });

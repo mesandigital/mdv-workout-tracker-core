@@ -1,6 +1,6 @@
 import { selectRaw, selectRawOne } from '../../db';
 import { getExercise } from '../../repositories/exercises';
-import { parseSecondaryMuscles } from '../../../WorkoutTracker/utils/parseSecondaryMuscles';
+import { parseSecondaryMuscles } from '../../utils';
 
 type WeightProgressionData = {
   exerciseId: number;

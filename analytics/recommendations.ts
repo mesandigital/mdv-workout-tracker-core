@@ -1,7 +1,45 @@
-import { getCurrentWeekNumber } from '../../../shared';
 import { getMostRelevantExerciseGap } from '../sessions/utils/getMostRelevantExerciseGap';
 import { getPlateauCandidates } from '../sessions/utils/plateauDetection';
-import { getNormalisedMuscleName } from '../../WorkoutTracker/utils/muscleMap';
+
+function getCurrentWeekNumber(referenceDate: Date = new Date()) {
+  const date = new Date(referenceDate);
+  date.setHours(0, 0, 0, 0);
+  date.setDate(date.getDate() + 3 - ((date.getDay() + 6) % 7));
+  const week1 = new Date(date.getFullYear(), 0, 4);
+  return Math.ceil(
+    (((date.getTime() - week1.getTime()) / 86400000) +
+      ((week1.getDay() + 6) % 7) +
+      1) /
+      7,
+  );
+}
+
+function getNormalisedMuscleName(
+  muscle: string,
+  inCap: boolean = true,
+): string {
+  const lowerMuscle = String(muscle || '').toLowerCase();
+  const aliases: Record<string, string> = {
+    pecs: 'chest',
+    pectorals: 'chest',
+    chest: 'chest',
+    delts: 'deltoids',
+    shoulders: 'deltoids',
+    rear_delt: 'rear deltoid',
+    anterior_deltoid: 'front deltoid',
+    lateral_deltoid: 'side deltoid',
+    posterior_deltoid: 'rear deltoid',
+    glutes: 'glutes',
+    hamstring: 'hamstrings',
+    quadriceps: 'quads',
+    trapezius: 'traps',
+    lats: 'lats',
+  };
+  const normalized = aliases[lowerMuscle] || lowerMuscle.replace(/[_-]+/g, ' ');
+  return inCap
+    ? normalized.charAt(0).toUpperCase() + normalized.slice(1)
+    : normalized;
+}
 
 export type SmartSlotConsistencyDecline = {
   currentWeekCount: number;

@@ -1,13 +1,18 @@
 import { useMemo } from 'react';
-import { computeMuscleSplit, getTrainingBias, getWeeklyMuscleRegionData, MuscleTargetOverrides, MUSCLE_FAMILIES } from '../../../features/sessions/utils';
 import {
   buildMuscleFocusRows,
   buildMuscleFocusSplit,
   buildMuscleFocusSummary,
+  computeMuscleSplit,
+  getDefaultMuscleTarget,
+  getTrainingBias,
+  getWeeklyMuscleRegionData,
+  MUSCLE_FAMILIES,
+  MUSCLE_PREFERENCE_MUSCLES,
   normalizeMuscleTargetKey,
   type MuscleFocusPeriodMode,
-} from '../../muscle-focus-kit';
-import { getDefaultMuscleTarget, MUSCLE_PREFERENCE_MUSCLES } from '../../../features/settings/musclePreferences';
+  type MuscleTargetOverrides,
+} from './muscleSplitSupport';
 
 const DEFAULT_WEEKLY_TARGETS = Object.fromEntries(
   MUSCLE_PREFERENCE_MUSCLES.map(muscle => [muscle, getDefaultMuscleTarget(muscle)]),
