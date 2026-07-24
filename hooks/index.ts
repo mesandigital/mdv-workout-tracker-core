@@ -9,5 +9,3 @@ export * from './useCycleSetReps';
 export * from './useWorkoutDetails';
 export * from './useWorkoutNotes';
 export * from './useWorkoutSession';
-export * from './useCycleSetReps';
-export * from './useSetLogMutations';

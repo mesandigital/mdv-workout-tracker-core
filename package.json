@@ -11,11 +11,13 @@
     "adapters",
     "analytics",
     "db",
+    "hooks",
     "queue",
     "repositories",
     "sessions",
     "sync",
     "sql",
+    "utils",
     "index.ts",
     "types.ts",
     "README.md",
@@ -42,6 +44,11 @@
       "types": "./analytics/index.ts",
       "default": "./analytics/index.ts"
     },
+    "./hooks": {
+      "react-native": "./hooks/index.ts",
+      "types": "./hooks/index.ts",
+      "default": "./hooks/index.ts"
+    },
     "./queue": {
       "react-native": "./queue/index.ts",
       "types": "./queue/index.ts",
@@ -61,6 +68,11 @@
       "react-native": "./sync/index.ts",
       "types": "./sync/index.ts",
       "default": "./sync/index.ts"
+    },
+    "./utils": {
+      "react-native": "./utils/index.ts",
+      "types": "./utils/index.ts",
+      "default": "./utils/index.ts"
     },
     "./types": {
       "types": "./types.ts",
