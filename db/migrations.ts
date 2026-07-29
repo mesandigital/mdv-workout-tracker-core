@@ -11,6 +11,7 @@ const MIGRATIONS = [
     description TEXT,
     body_part TEXT,
     primary_muscle TEXT,
+    secondary_muscle TEXT,
     secondary_muscles TEXT,
     equipment TEXT,
     movement TEXT,

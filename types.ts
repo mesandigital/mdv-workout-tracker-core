@@ -262,6 +262,10 @@ export type WorkoutSession = {
   finished_at?: string | null;
   notes?: string | null;
   duration?: number | null;
+  program_id?: number | string | null;
+  program_workout_id?: number | string | null;
+  assignment_id?: number | string | null;
+  remote_source?: string | null;
 };
 
 export type SetLogInput = {

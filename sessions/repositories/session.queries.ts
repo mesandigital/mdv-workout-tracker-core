@@ -29,6 +29,9 @@ const TABLES = {
   exercise_logs: 'exercise_logs',
 };
 
+const toTextId = (value: number | string | null | undefined) =>
+  value == null ? null : String(value);
+
 const parseJsonArray = (value: unknown) => {
   if (Array.isArray(value)) return value;
   if (typeof value !== 'string' || !value) return [];
@@ -126,6 +129,120 @@ const normalizeDropSets = (value: unknown) =>
     completed: drop.completed ? 1 : 0,
   }));
 
+const buildFallbackSets = (input: {
+  setCount?: number | null;
+  plannedReps?: number | null;
+  weight?: number | null;
+  setsArray?: unknown;
+}) => {
+  const parsedSets = parseJsonArray(input.setsArray);
+  if (parsedSets.length > 0) return parsedSets;
+
+  return Array.from(
+    { length: Math.max(1, Math.round(Number(input.setCount) || 1)) },
+    (_, index) => ({
+      set_number: index + 1,
+      planned_reps: Math.max(1, Math.round(Number(input.plannedReps) || 10)),
+      planned_weight: input.weight ?? null,
+    }),
+  );
+};
+
+const createSetLogsForExerciseLog = async (input: {
+  exerciseLogId: number;
+  exerciseType?: string | null;
+  setCount?: number | null;
+  plannedReps?: number | null;
+  weight?: number | null;
+  setsArray?: unknown;
+}) => {
+  const sets = buildFallbackSets(input);
+
+  for (let index = 0; index < sets.length; index += 1) {
+    const set = sets[index] || {};
+    await insert(TABLES.set_logs, {
+      exercise_log_id: input.exerciseLogId,
+      set_number: getSetNumber(set, index),
+      round_number: set.round_number || set.roundNumber || null,
+      reps: null,
+      completed: 0,
+      planned_reps:
+        set.planned_reps ||
+        set.plannedReps ||
+        input.plannedReps ||
+        set.reps ||
+        10,
+      planned_duration_seconds:
+        set.duration_seconds ?? set.durationSeconds ?? null,
+      duration_seconds: null,
+      weight: normalizePlannedWeight(
+        input.exerciseType,
+        set.planned_weight ?? set.plannedWeight ?? set.weight ?? input.weight,
+      ),
+      drop_sets: JSON.stringify(
+        createSessionDropSets(set.drop_sets || set.dropSets),
+      ),
+    });
+  }
+};
+
+const ensureSessionSetLogs = async (sessionId: number) => {
+  const exerciseLogs = await selectRaw<{
+    exerciseLogId: number;
+    exerciseId: number;
+    plannedSets?: number | null;
+    plannedReps?: number | null;
+    weight?: number | null;
+    exerciseType?: string | null;
+    workoutDefaultSets?: number | null;
+    workoutDefaultReps?: number | null;
+    setsArray?: string | null;
+  }>(
+    `
+    SELECT
+      el.id as exerciseLogId,
+      el.exercise_id as exerciseId,
+      el.planned_sets as plannedSets,
+      el.planned_reps as plannedReps,
+      el.weight,
+      e.exercise_type as exerciseType,
+      we.default_sets as workoutDefaultSets,
+      we.default_reps as workoutDefaultReps,
+      we.setsArray
+    FROM ${TABLES.exercise_logs} el
+    JOIN ${TABLES.workout_sessions} ws ON ws.id = el.workout_session_id
+    LEFT JOIN ${TABLES.exercises} e
+      ON e.id = el.exercise_id
+      OR e.seeded_id = CAST(el.exercise_id AS TEXT)
+    LEFT JOIN ${TABLES.workout_exercises} we
+      ON we.workout_id = ws.workout_id
+      AND we.exercise_id = el.exercise_id
+    WHERE el.workout_session_id = ?
+    ORDER BY el.order_index ASC, el.id ASC
+    `,
+    [sessionId],
+  );
+
+  for (const exerciseLog of exerciseLogs) {
+    const existing = await selectRawOne<{ total: number }>(
+      `SELECT COUNT(*) as total FROM ${TABLES.set_logs} WHERE exercise_log_id = ?`,
+      [exerciseLog.exerciseLogId],
+    );
+
+    if ((existing?.total || 0) > 0) continue;
+
+    await createSetLogsForExerciseLog({
+      exerciseLogId: exerciseLog.exerciseLogId,
+      exerciseType: exerciseLog.exerciseType,
+      setCount: exerciseLog.plannedSets || exerciseLog.workoutDefaultSets || 1,
+      plannedReps:
+        exerciseLog.plannedReps || exerciseLog.workoutDefaultReps || 10,
+      weight: exerciseLog.weight ?? null,
+      setsArray: exerciseLog.setsArray,
+    });
+  }
+};
+
 /**
  * Fetches planned sets for an exercise in a workout template
  */
@@ -173,15 +290,15 @@ export async function createWorkoutSession(
   const sessionId = await insert(TABLES.workout_sessions, {
     user_id: metadata.userId || null,
     workout_id: workoutId,
-    // organization_id: metadata.organizationId || null,
-    // program_id: toTextId(metadata.programId),
-    // program_workout_id: toTextId(metadata.programWorkoutId),
-    // assignment_id: toTextId(metadata.assignmentId),
-    // progress_id: toTextId(metadata.progressId),
-    // client_session_id: metadata.clientSessionId || null,
-    // remote_source: metadata.remoteSource || null,
-    // sync_status: metadata.remoteSource ? 'pending' : 'local',
-    // synced: metadata.remoteSource ? 0 : 1,
+    organization_id: metadata.organizationId || null,
+    program_id: toTextId(metadata.programId),
+    program_workout_id: toTextId(metadata.programWorkoutId),
+    assignment_id: toTextId(metadata.assignmentId),
+    progress_id: toTextId(metadata.progressId),
+    client_session_id: metadata.clientSessionId || null,
+    remote_source: metadata.remoteSource || null,
+    sync_status: metadata.remoteSource ? 'pending' : 'local',
+    synced: metadata.remoteSource ? 0 : 1,
     started_at: new Date().toISOString(),
     finished_at: null,
   });
@@ -390,9 +507,16 @@ export async function getActiveSession(
   if (workoutId) {
     return selectRawOne<WorkoutSession>(
       `
-      SELECT *
+      SELECT
+        ws.*,
+        COALESCE(ws.program_id, w.program_id) as program_id,
+        COALESCE(ws.program_workout_id, w.program_workout_id) as program_workout_id,
+        COALESCE(ws.assignment_id, w.assignment_id) as assignment_id,
+        COALESCE(ws.remote_source, w.remote_source) as remote_source
       FROM ${TABLES.workout_sessions}
-      WHERE finished_at IS NULL AND workout_id = ?
+      ws
+      LEFT JOIN ${TABLES.workouts} w ON w.id = ws.workout_id
+      WHERE ws.finished_at IS NULL AND ws.workout_id = ?
       ORDER BY started_at DESC
       LIMIT 1
       `,
@@ -403,9 +527,16 @@ export async function getActiveSession(
   // Return any active session
   return selectRawOne<WorkoutSession>(
     `
-    SELECT *
+    SELECT
+      ws.*,
+      COALESCE(ws.program_id, w.program_id) as program_id,
+      COALESCE(ws.program_workout_id, w.program_workout_id) as program_workout_id,
+      COALESCE(ws.assignment_id, w.assignment_id) as assignment_id,
+      COALESCE(ws.remote_source, w.remote_source) as remote_source
     FROM ${TABLES.workout_sessions}
-    WHERE finished_at IS NULL
+    ws
+    LEFT JOIN ${TABLES.workouts} w ON w.id = ws.workout_id
+    WHERE ws.finished_at IS NULL
     ORDER BY started_at DESC
     LIMIT 1
     `,
@@ -558,6 +689,7 @@ export async function fetchWorkoutSessionWithLastSessionDate(
 ): Promise<{ workoutName: string; exercises: HydratedExercise[] }> {
   try {
     await repairWorkoutSessionBlocks(sessionId);
+    await ensureSessionSetLogs(sessionId);
     console.log(
       '[fetchWorkoutSessionWithLastSessionDate] Fetching session data for sessionId:',
       sessionId,
@@ -783,13 +915,25 @@ export async function addExerciseToSession(
   sessionId: number,
   exerciseId: number,
 ): Promise<void> {
-  await insert(TABLES.exercise_logs, {
+  const exercise = await selectRawOne<{
+    exercise_type?: string | null;
+  }>(`SELECT exercise_type FROM ${TABLES.exercises} WHERE id = ?`, [
+    exerciseId,
+  ]);
+  const exerciseLogId = await insert(TABLES.exercise_logs, {
     workout_session_id: sessionId,
     exercise_id: exerciseId,
     planned_sets: 3,
     planned_reps: 10,
     weight: 0,
     source: 'session',
+  });
+  await createSetLogsForExerciseLog({
+    exerciseLogId: Number(exerciseLogId),
+    exerciseType: exercise?.exercise_type,
+    setCount: 3,
+    plannedReps: 10,
+    weight: 0,
   });
 }
 
@@ -1101,16 +1245,19 @@ export async function endWorkoutSession(
  */
 export async function addSetLog(
   exerciseLogId: number,
-  { setNumber, plannedReps, weight, completed }: Set,
+  data: Set,
 ): Promise<number> {
   try {
     const newId = await insert(TABLES.set_logs, {
       exercise_log_id: exerciseLogId,
-      set_number: setNumber,
-      planned_reps: plannedReps,
-      // reps: reps ?? null,
-      weight: weight ?? null,
-      completed,
+      set_number: data.setNumber,
+      round_number: data.roundNumber ?? null,
+      planned_reps: data.plannedReps,
+      planned_duration_seconds: data.plannedDurationSeconds ?? null,
+      duration_seconds: data.durationSeconds ?? null,
+      drop_sets: JSON.stringify(data.dropSets || []),
+      weight: data.weight ?? null,
+      completed: data.completed,
     });
     // insert returns the new row id as a number
     return newId;

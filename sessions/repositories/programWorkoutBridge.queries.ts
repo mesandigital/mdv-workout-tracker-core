@@ -27,10 +27,16 @@ type RemoteExercise = {
 
 type ProgramExerciseSetSnapshot = {
   id?: number;
-  set_number: number;
+  set_number?: number;
+  setNumber?: number;
   planned_reps?: number | null;
+  plannedReps?: number | null;
   planned_weight?: number | null;
+  plannedWeight?: number | null;
   duration_seconds?: number | null;
+  durationSeconds?: number | null;
+  drop_sets?: unknown;
+  dropSets?: unknown;
 };
 
 type ProgramExerciseSnapshot = {
@@ -57,6 +63,7 @@ export type ProgramWorkoutSessionSnapshot = {
   workoutId?: number | string | null;
   assignmentId?: number | string | null;
   progressId?: number | string | null;
+  clientSessionId?: string | null;
   name?: string | null;
   description?: string | null;
   weekNumber?: number | null;
@@ -77,6 +84,22 @@ export type WorkoutTemplateSessionSnapshot = {
 
 const toTextId = (value: number | string | null | undefined) =>
   value == null ? null : String(value);
+
+const setNumberOf = (set: ProgramExerciseSetSnapshot, fallback: number) =>
+  set.set_number ?? set.setNumber ?? fallback;
+
+const plannedRepsOf = (
+  set: ProgramExerciseSetSnapshot | undefined,
+  fallback: number | null | undefined,
+) => set?.planned_reps ?? set?.plannedReps ?? fallback ?? 1;
+
+const plannedWeightOf = (
+  set: ProgramExerciseSetSnapshot | undefined,
+  fallback: number | null | undefined,
+) => set?.planned_weight ?? set?.plannedWeight ?? fallback ?? null;
+
+const durationSecondsOf = (set: ProgramExerciseSetSnapshot) =>
+  set.duration_seconds ?? set.durationSeconds ?? null;
 
 const getOrCreateLocalExercise = async (
   remoteExerciseId: number,
@@ -281,8 +304,12 @@ export async function importProgramWorkoutSnapshot(
 ): Promise<number> {
   const localWorkoutId = await getOrCreateLocalWorkout(snapshot);
 
-  // await executeRaw('DELETE FROM workout_exercise_sets WHERE workout_id = ?', [localWorkoutId]);
-  // await executeRaw('DELETE FROM workout_exercises WHERE workout_id = ?', [localWorkoutId]);
+  await executeRaw('DELETE FROM workout_exercise_sets WHERE workout_id = ?', [
+    localWorkoutId,
+  ]);
+  await executeRaw('DELETE FROM workout_exercises WHERE workout_id = ?', [
+    localWorkoutId,
+  ]);
 
   for (const programExercise of snapshot.exercises) {
     const remoteExercise =
@@ -315,7 +342,8 @@ export async function importProgramWorkoutSnapshot(
       superset_id: programExercise.superset_id || null,
       order_index: programExercise.order_index || 0,
       default_sets: programExercise.default_sets || sets.length || 1,
-      default_reps: programExercise.default_reps || sets[0]?.planned_reps || 1,
+      default_reps:
+        programExercise.default_reps || plannedRepsOf(sets[0], null),
       weight,
       section: programExercise.section || 'main',
       setsArray: JSON.stringify(sets),
@@ -323,18 +351,20 @@ export async function importProgramWorkoutSnapshot(
       synced: 1,
     });
 
-    for (const set of sets) {
+    for (let index = 0; index < sets.length; index += 1) {
+      const set = sets[index];
       await insert('workout_exercise_sets', {
         tenant_id: snapshot.organizationId,
         workout_id: localWorkoutId,
         exercise_id: localExerciseId,
-        set_number: set.set_number,
-        planned_reps: set.planned_reps || programExercise.default_reps || 1,
+        set_number: setNumberOf(set, index + 1),
+        planned_reps: plannedRepsOf(set, programExercise.default_reps),
         planned_weight: normalizePlannedWeight(
           exerciseType,
-          set.planned_weight ?? weight,
+          plannedWeightOf(set, weight),
         ),
-        duration_seconds: set.duration_seconds ?? null,
+        duration_seconds: durationSecondsOf(set),
+        drop_sets: JSON.stringify(set.drop_sets || set.dropSets || []),
         deleted: 0,
         synced: 1,
       });
@@ -349,8 +379,12 @@ export async function importWorkoutTemplateSnapshot(
 ): Promise<number> {
   const localWorkoutId = await getOrCreateLocalWorkoutTemplate(snapshot);
 
-  // await executeRaw('DELETE FROM workout_exercise_sets WHERE workout_id = ?', [localWorkoutId]);
-  // await executeRaw('DELETE FROM workout_exercises WHERE workout_id = ?', [localWorkoutId]);
+  await executeRaw('DELETE FROM workout_exercise_sets WHERE workout_id = ?', [
+    localWorkoutId,
+  ]);
+  await executeRaw('DELETE FROM workout_exercises WHERE workout_id = ?', [
+    localWorkoutId,
+  ]);
 
   for (const templateExercise of snapshot.exercises) {
     const remoteExercise =
@@ -383,7 +417,8 @@ export async function importWorkoutTemplateSnapshot(
       superset_id: templateExercise.superset_id || null,
       order_index: templateExercise.order_index || 0,
       default_sets: templateExercise.default_sets || sets.length || 1,
-      default_reps: templateExercise.default_reps || sets[0]?.planned_reps || 1,
+      default_reps:
+        templateExercise.default_reps || plannedRepsOf(sets[0], null),
       weight,
       section: templateExercise.section || 'main',
       setsArray: JSON.stringify(sets),
@@ -391,18 +426,20 @@ export async function importWorkoutTemplateSnapshot(
       synced: 1,
     });
 
-    for (const set of sets) {
+    for (let index = 0; index < sets.length; index += 1) {
+      const set = sets[index];
       await insert('workout_exercise_sets', {
         tenant_id: snapshot.organizationId || null,
         workout_id: localWorkoutId,
         exercise_id: localExerciseId,
-        set_number: set.set_number,
-        planned_reps: set.planned_reps || templateExercise.default_reps || 1,
+        set_number: setNumberOf(set, index + 1),
+        planned_reps: plannedRepsOf(set, templateExercise.default_reps),
         planned_weight: normalizePlannedWeight(
           exerciseType,
-          set.planned_weight ?? weight,
+          plannedWeightOf(set, weight),
         ),
-        duration_seconds: set.duration_seconds ?? null,
+        duration_seconds: durationSecondsOf(set),
+        drop_sets: JSON.stringify(set.drop_sets || set.dropSets || []),
         deleted: 0,
         synced: 1,
       });
@@ -460,7 +497,9 @@ export async function startProgramWorkoutSession(
     programWorkoutId: snapshot.programWorkoutId,
     assignmentId: snapshot.assignmentId,
     progressId: snapshot.progressId,
-    clientSessionId: `program-${snapshot.programWorkoutId}-${Date.now()}`,
+    clientSessionId:
+      snapshot.clientSessionId ||
+      `program-${snapshot.programWorkoutId}-${Date.now()}`,
     remoteSource: 'workout_program',
     userId: snapshot.userId,
   });
