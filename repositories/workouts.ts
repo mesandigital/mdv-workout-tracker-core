@@ -296,6 +296,20 @@ export async function updateWorkoutTemplate(
     });
     existingByExercise.set(link.exercise_id, bucket);
   });
+  const existingExerciseCounts = new Map<number, number>();
+  existingLinks.forEach(link => {
+    existingExerciseCounts.set(
+      link.exercise_id,
+      (existingExerciseCounts.get(link.exercise_id) || 0) + 1,
+    );
+  });
+  const nextExerciseCounts = new Map<number, number>();
+  input.exercises.forEach(exercise => {
+    nextExerciseCounts.set(
+      exercise.exercise_id,
+      (nextExerciseCounts.get(exercise.exercise_id) || 0) + 1,
+    );
+  });
   const addedExercises: Array<{
     exercise: WorkoutTemplateExerciseInput;
     orderIndex: number;
@@ -339,6 +353,12 @@ export async function updateWorkoutTemplate(
   const eventAt = new Date().toISOString();
 
   for (const exercise of addedExercises) {
+    if (
+      (existingExerciseCounts.get(exercise.exercise.exercise_id) || 0) ===
+      (nextExerciseCounts.get(exercise.exercise.exercise_id) || 0)
+    ) {
+      continue;
+    }
     await recordWorkoutTemplateHistoryEvent({
       workoutId: id,
       exerciseId: exercise.exercise.exercise_id,
@@ -354,6 +374,12 @@ export async function updateWorkoutTemplate(
   }
 
   for (const exercise of removedExercises) {
+    if (
+      (existingExerciseCounts.get(exercise.exerciseId) || 0) ===
+      (nextExerciseCounts.get(exercise.exerciseId) || 0)
+    ) {
+      continue;
+    }
     await recordWorkoutTemplateHistoryEvent({
       workoutId: id,
       workoutExerciseId: exercise.workoutExerciseId,
