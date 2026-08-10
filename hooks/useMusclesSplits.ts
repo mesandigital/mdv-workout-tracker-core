@@ -3,6 +3,8 @@ import {
   buildMuscleFocusRows,
   buildMuscleFocusSplit,
   buildMuscleFocusSummary,
+} from '../../muscle-focus-kit';
+import {
   computeMuscleSplit,
   getDefaultMuscleTarget,
   getTrainingBias,
@@ -15,7 +17,10 @@ import {
 } from './muscleSplitSupport';
 
 const DEFAULT_WEEKLY_TARGETS = Object.fromEntries(
-  MUSCLE_PREFERENCE_MUSCLES.map(muscle => [muscle, getDefaultMuscleTarget(muscle)]),
+  MUSCLE_PREFERENCE_MUSCLES.map(muscle => [
+    muscle,
+    getDefaultMuscleTarget(muscle),
+  ]),
 );
 const TARGET_ALIASES = MUSCLE_FAMILIES.reduce((aliases, family) => {
   const canonical = normalizeMuscleTargetKey(family[0]);
@@ -31,33 +36,41 @@ export function useMusclesSplits({
   periodMode = 'week',
   trackedMuscles = [],
   targetOverrides = {},
-  workoutLogs = []
+  workoutLogs = [],
 }: {
-  weekNumber?: number,
-  periodRange?: { startDate: Date; endDate: Date },
-  periodMode?: MuscleFocusPeriodMode,
-  trackedMuscles?: string[],
-  targetOverrides?: MuscleTargetOverrides,
-  workoutLogs?: any[],
+  weekNumber?: number;
+  periodRange?: { startDate: Date; endDate: Date };
+  periodMode?: MuscleFocusPeriodMode;
+  trackedMuscles?: string[];
+  targetOverrides?: MuscleTargetOverrides;
+  workoutLogs?: any[];
 }) {
   // Filter logs by timeRange (now using hook)
   // const { filteredLogs = [], isLoading: filteredLogsLoading } = useFilteredLogsByTimeRange(timeRange, weekNumber, periodRange);
   // Muscle split & Training bias
-  const { 
-    muscleSplit, 
-    muscleSplitEx, 
-    muscleSetCount, 
-    primaryMuscleCount, 
-    secondaryMuscleCount, 
-    muscleExerciseLog 
+  const {
+    muscleSplit,
+    muscleSplitEx,
+    muscleSetCount,
+    primaryMuscleCount,
+    secondaryMuscleCount,
+    muscleExerciseLog,
   } = useMemo(() => computeMuscleSplit(workoutLogs), [workoutLogs]);
   const trainingBias = getTrainingBias(muscleSplit || {});
 
-  const muscleSummary = useMemo(() => Object.entries(muscleExerciseLog || {}).map(([muscle, exercises_info]) => ({
-    muscle,
-    count: Array.isArray(exercises_info) ? exercises_info.reduce((sum, ex) => sum + (ex.total_sets || 0), 0) : 0,
-    exercises_info: exercises_info || [],
-  })), [muscleExerciseLog]);
+  const muscleSummary = useMemo(
+    () =>
+      Object.entries(muscleExerciseLog || {}).map(
+        ([muscle, exercises_info]) => ({
+          muscle,
+          count: Array.isArray(exercises_info)
+            ? exercises_info.reduce((sum, ex) => sum + (ex.total_sets || 0), 0)
+            : 0,
+          exercises_info: exercises_info || [],
+        }),
+      ),
+    [muscleExerciseLog],
+  );
 
   const muscleFocusSummary = useMemo(() => {
     return buildMuscleFocusSummary({
@@ -69,7 +82,10 @@ export function useMusclesSplits({
 
   const muscleFocusRows = useMemo(() => {
     return buildMuscleFocusRows({
-      muscles: muscleFocusSummary.map(item => ({ muscle: item.muscle, completedSets: item.count })),
+      muscles: muscleFocusSummary.map(item => ({
+        muscle: item.muscle,
+        completedSets: item.count,
+      })),
       weeklyTargets: targetOverrides,
       defaultWeeklyTargets: DEFAULT_WEEKLY_TARGETS,
       targetAliases: TARGET_ALIASES,
@@ -80,7 +96,13 @@ export function useMusclesSplits({
       startDate: periodRange?.startDate,
       endDate: periodRange?.endDate,
     });
-  }, [muscleFocusSummary, periodMode, periodRange?.endDate, periodRange?.startDate, targetOverrides]);
+  }, [
+    muscleFocusSummary,
+    periodMode,
+    periodRange?.endDate,
+    periodRange?.startDate,
+    targetOverrides,
+  ]);
 
   const muscleFocusSplit = useMemo(() => {
     return buildMuscleFocusSplit(muscleFocusRows);
@@ -94,20 +116,26 @@ export function useMusclesSplits({
       targetOverrides,
       progressRows: muscleFocusRows,
     });
-  }, [muscleFocusRows, muscleFocusSummary, periodMode, targetOverrides, weekNumber]);
+  }, [
+    muscleFocusRows,
+    muscleFocusSummary,
+    periodMode,
+    targetOverrides,
+    weekNumber,
+  ]);
 
-  return { 
-    muscleSplit, 
-    muscleSplitEx, 
-    muscleSetCount, 
-    trainingBias, 
-    primaryMuscleCount, 
-    secondaryMuscleCount, 
+  return {
+    muscleSplit,
+    muscleSplitEx,
+    muscleSetCount,
+    trainingBias,
+    primaryMuscleCount,
+    secondaryMuscleCount,
     muscleExerciseLog,
     muscleSummary,
     muscleFocusSummary,
     muscleFocusRows,
     muscleFocusSplit,
     muscleRegionData,
-  }
+  };
 }

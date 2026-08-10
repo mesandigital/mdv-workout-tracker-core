@@ -17,7 +17,8 @@ export async function getExerciseSessionStats(
     workout_name: string | null;
   }>(
     `
-        SELECT ws.id, ws.finished_at, w.name as workout_name
+        SELECT ws.id, ws.finished_at,
+               COALESCE(NULLIF(TRIM(ws.session_name), ''), w.name) as workout_name
         FROM workout_sessions ws
         JOIN exercise_logs el ON el.workout_session_id = ws.id
         JOIN workouts w ON w.id = ws.workout_id

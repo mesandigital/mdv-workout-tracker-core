@@ -10,6 +10,7 @@ export * from './useDurationInsight';
 export * from './useEndWorkoutSessionWithDuration';
 export * from './useSessionQualityScore';
 export * from './useSetLogMutations';
+export * from './useStartQuickWorkoutSession';
 export * from './useStartWorkoutSession';
 export * from './useUpdateSessionNotes';
 export * from './useUpdateSetRows';

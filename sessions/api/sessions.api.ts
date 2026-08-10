@@ -33,6 +33,7 @@ import {
   endWorkoutSession as endCoreWorkoutSession,
   generateExerciseLogsAndSets as generateCoreExerciseLogsAndSets,
   getActiveWorkoutSession,
+  startQuickWorkoutSession as startCoreQuickWorkoutSession,
   setCompletedReps,
   updateSetLog as updateCoreSetLog,
 } from '../../repositories/sessions';
@@ -40,6 +41,9 @@ import {
 export const WorkoutSessionApi = {
   createWorkoutSession: async (workoutId: number): Promise<number> => {
     return await createCoreWorkoutSession(workoutId);
+  },
+  startQuickWorkoutSession: async (): Promise<number> => {
+    return await startCoreQuickWorkoutSession();
   },
   startProgramWorkoutSession: async (
     snapshot: ProgramWorkoutSessionSnapshot,

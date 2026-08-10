@@ -15,6 +15,8 @@ import type {
 import { persistPersonalRecordsForSession } from './personalRecords';
 import { normalizePlannedWeight } from '../utils';
 
+const QUICK_START_WORKOUT_SEEDED_ID = 'system:quick-start-workout';
+
 const parseTemplateSets = (value: string | null | undefined) => {
   if (!value) return [];
   try {
@@ -90,6 +92,26 @@ export async function createWorkoutSession(
     workout_id: workoutId,
     started_at: startedAt,
     finished_at: null,
+  });
+}
+
+async function ensureQuickStartWorkout() {
+  const existingWorkout = await selectRawOne<{ id: number }>(
+    'SELECT id FROM workouts WHERE seeded_id = ? LIMIT 1',
+    [QUICK_START_WORKOUT_SEEDED_ID],
+  );
+
+  if (existingWorkout?.id) return existingWorkout.id;
+
+  return insert('workouts', {
+    name: 'Quick Start',
+    type: 'freestyle',
+    description: 'Internal freestyle workout used for ad hoc live sessions.',
+    archived: 1,
+    seeded: 1,
+    seeded_id: QUICK_START_WORKOUT_SEEDED_ID,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
   });
 }
 
@@ -251,6 +273,14 @@ export async function startWorkoutSession(workoutId: number) {
   const sessionId = await createWorkoutSession(workoutId);
   await generateExerciseLogsAndSets(sessionId, workoutId);
   return sessionId;
+}
+
+export async function startQuickWorkoutSession() {
+  const workoutId = await ensureQuickStartWorkout();
+  const activeSession = await getActiveWorkoutSession(workoutId);
+  if (activeSession) return activeSession.id;
+
+  return createWorkoutSession(workoutId);
 }
 
 export async function repairWorkoutSessionBlocks(sessionId: number) {

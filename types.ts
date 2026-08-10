@@ -258,6 +258,7 @@ export type WorkoutTemplate = {
 export type WorkoutSession = {
   id: number;
   workout_id: number;
+  session_name?: string | null;
   started_at: string;
   finished_at?: string | null;
   notes?: string | null;

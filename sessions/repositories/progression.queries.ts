@@ -195,7 +195,7 @@ export async function fetchExerciseProgression(exerciseId: number) {
       `
       SELECT 
         ws.id as session_id,
-        w.name as workout_name,
+        COALESCE(NULLIF(TRIM(ws.session_name), ''), w.name) as workout_name,
         ws.started_at,
         ws.finished_at,
         el.planned_sets,

@@ -697,7 +697,8 @@ export async function fetchWorkoutSessionWithLastSessionDate(
     // Get the workout name for this session
     const sessionInfo = await selectRawOne<{ workout_name: string }>(
       `
-      SELECT w.name as workout_name, w.description
+      SELECT COALESCE(NULLIF(TRIM(ws.session_name), ''), w.name) as workout_name,
+             w.description
       FROM ${TABLES.workout_sessions} ws
       JOIN ${TABLES.workouts} w ON w.id = ws.workout_id
       WHERE ws.id = ?
@@ -924,7 +925,7 @@ export async function addExerciseToSession(
     workout_session_id: sessionId,
     exercise_id: exerciseId,
     planned_sets: 3,
-    planned_reps: 10,
+    planned_reps: 8,
     weight: 0,
     source: 'session',
   });
@@ -932,7 +933,7 @@ export async function addExerciseToSession(
     exerciseLogId: Number(exerciseLogId),
     exerciseType: exercise?.exercise_type,
     setCount: 3,
-    plannedReps: 10,
+    plannedReps: 8,
     weight: 0,
   });
 }
