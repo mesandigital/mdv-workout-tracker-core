@@ -48,6 +48,69 @@ const parseJsonArray = (value: unknown) => {
   }
 };
 
+const parseTimestampMs = (value?: string | null) => {
+  if (!value) return null;
+  const normalized = value.includes('T')
+    ? value
+    : `${value.replace(' ', 'T')}Z`;
+  const time = new Date(normalized).getTime();
+  return Number.isFinite(time) ? time : null;
+};
+
+const getEffectiveSessionDuration = async (
+  sessionId: number,
+  finishedAt: string,
+  fallbackDuration?: number,
+) => {
+  const row = await selectRawOne<{
+    started_at: string;
+    latest_completed_at: string | null;
+  }>(
+    `
+    SELECT
+      ws.started_at,
+      MAX(sl.completed_at) as latest_completed_at
+    FROM ${TABLES.workout_sessions} ws
+    LEFT JOIN ${TABLES.exercise_logs} el ON el.workout_session_id = ws.id
+    LEFT JOIN ${TABLES.set_logs} sl
+      ON sl.exercise_log_id = el.id
+      AND sl.completed_at IS NOT NULL
+      AND COALESCE(sl.completed, 0) = 1
+    WHERE ws.id = ?
+    GROUP BY ws.id
+    `,
+    [sessionId],
+  );
+  const startedAtMs = parseTimestampMs(row?.started_at);
+  const completedAtMs = parseTimestampMs(row?.latest_completed_at);
+  const finishedAtMs = parseTimestampMs(finishedAt);
+
+  if (
+    startedAtMs !== null &&
+    completedAtMs !== null &&
+    completedAtMs >= startedAtMs
+  ) {
+    return Math.max(0, Math.floor((completedAtMs - startedAtMs) / 1000));
+  }
+
+  if (
+    typeof fallbackDuration === 'number' &&
+    Number.isFinite(fallbackDuration)
+  ) {
+    return Math.max(0, Math.floor(fallbackDuration));
+  }
+
+  if (
+    startedAtMs !== null &&
+    finishedAtMs !== null &&
+    finishedAtMs >= startedAtMs
+  ) {
+    return Math.max(0, Math.floor((finishedAtMs - startedAtMs) / 1000));
+  }
+
+  return undefined;
+};
+
 const createSessionDropSets = (value: unknown) =>
   parseJsonArray(value).map((drop: any) => {
     if (drop.plannedReps !== undefined || drop.plannedWeight !== undefined)
@@ -73,6 +136,8 @@ type SessionExerciseStructureSetInput = {
   weight?: number | null;
   reps?: number | null;
   completed?: number | null;
+  completedAt?: string | null;
+  completed_at?: string | null;
   dropSets?: unknown;
   drop_sets?: unknown;
 };
@@ -330,6 +395,7 @@ export async function generateExerciseLogsAndSets(
       default_sets: number;
       default_reps: number;
       weight: number | null;
+      per_side?: number | null;
       exercise_type?: string | null;
       superset_id?: number | null;
       group_id?: number | null;
@@ -350,6 +416,7 @@ export async function generateExerciseLogsAndSets(
       we.default_reps,
       we.setsArray,
       we.weight,
+      we.per_side,
       e.exercise_type,
       we.superset_id,
       we.group_id,
@@ -392,6 +459,7 @@ export async function generateExerciseLogsAndSets(
             : row.default_sets,
         planned_reps: row.default_reps,
         weight: rowWeight,
+        per_side: row.per_side ? 1 : 0,
         superset_id: row.superset_id || null,
         group_id: row.group_id || row.superset_id || null,
         group_type: row.group_type || (row.superset_id ? 'superset' : null),
@@ -729,6 +797,7 @@ export async function fetchWorkoutSessionWithLastSessionDate(
         el.planned_reps,
         el.planned_reps AS plannedReps,
         el.weight,
+        el.per_side AS perSide,
         el.rest_seconds AS restSeconds,
         el.order_index,
         el.superset_id AS supersetId,
@@ -881,6 +950,7 @@ async function getSetsForExercise(exerciseLogIds: number[], sets: SetRow[]) {
             sl.exercise_log_id,
             sl.reps,
             sl.completed,
+            sl.completed_at as completedAt,
             sl.set_number,
             sl.round_number as roundNumber,
             sl.planned_reps as plannedReps,
@@ -1076,6 +1146,9 @@ export async function saveSessionExerciseStructure(
         const dropSets = JSON.stringify(
           normalizeDropSets(set.dropSets ?? set.drop_sets),
         );
+        const completedAt = set.completed
+          ? set.completedAt ?? set.completed_at ?? new Date().toISOString()
+          : null;
 
         if (typeof set.id === 'number' && set.id > 0) {
           await executeRaw(
@@ -1090,6 +1163,7 @@ export async function saveSessionExerciseStructure(
               reps = ?,
               weight = ?,
               completed = ?,
+              completed_at = ?,
               drop_sets = ?
             WHERE id = ? AND exercise_log_id = ?
             `,
@@ -1102,6 +1176,7 @@ export async function saveSessionExerciseStructure(
               set.reps ?? null,
               set.weight ?? exercise.weight ?? null,
               set.completed ? 1 : 0,
+              completedAt,
               dropSets,
               set.id,
               exercise.exerciseLogId,
@@ -1120,6 +1195,7 @@ export async function saveSessionExerciseStructure(
           reps: set.reps ?? null,
           weight: set.weight ?? exercise.weight ?? null,
           completed: set.completed ? 1 : 0,
+          completed_at: completedAt,
           drop_sets: dropSets,
         });
       }
@@ -1195,11 +1271,19 @@ export async function endWorkoutSession(
   duration?: number,
 ): Promise<void> {
   try {
+    const effectiveDuration = await getEffectiveSessionDuration(
+      sessionId,
+      finishedAt,
+      duration,
+    );
+
     // Mark session as finished
     await update(TABLES.workout_sessions, String(sessionId), {
       finished_at: finishedAt,
       notes: notes || null,
-      ...(typeof duration === 'number' ? { duration } : {}),
+      ...(typeof effectiveDuration === 'number'
+        ? { duration: effectiveDuration }
+        : {}),
     });
 
     // Persist latest weights from this session to the workout template
@@ -1249,6 +1333,8 @@ export async function addSetLog(
   data: Set,
 ): Promise<number> {
   try {
+    const timestamp = new Date().toISOString();
+    const completed = data.completed ? 1 : 0;
     const newId = await insert(TABLES.set_logs, {
       exercise_log_id: exerciseLogId,
       set_number: data.setNumber,
@@ -1258,7 +1344,8 @@ export async function addSetLog(
       duration_seconds: data.durationSeconds ?? null,
       drop_sets: JSON.stringify(data.dropSets || []),
       weight: data.weight ?? null,
-      completed: data.completed,
+      completed,
+      completed_at: completed ? data.completedAt ?? timestamp : null,
     });
     // insert returns the new row id as a number
     return newId;
@@ -1284,6 +1371,8 @@ export async function updateSetLog(
     if (typeof plannedReps === 'number') {
       updateFields.planned_reps = plannedReps;
       updateFields.reps = null; // Reset reps only if planned_reps is changed
+      updateFields.completed = 0;
+      updateFields.completed_at = null;
     }
     if (typeof weight === 'number' || weight === null) {
       updateFields.weight = weight;
@@ -1425,8 +1514,11 @@ export async function updateSetLogStatus(
   reps: number | null,
   completed: 0 | 1,
 ): Promise<void> {
+  const timestamp = new Date().toISOString();
   await update('set_logs', setId.toString(), {
     reps,
     completed,
+    completed_at: completed ? timestamp : null,
+    updated_at: timestamp,
   });
 }

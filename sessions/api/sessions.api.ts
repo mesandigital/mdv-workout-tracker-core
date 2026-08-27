@@ -139,6 +139,7 @@ export const WorkoutSessionApi = {
       planned_reps: data.plannedReps,
       weight: data.weight,
       completed: data.completed,
+      completed_at: data.completedAt ?? data.completed_at ?? null,
       drop_sets: data.dropSets,
       planned_duration_seconds: data.plannedDurationSeconds,
       round_number: data.roundNumber,
@@ -159,13 +160,14 @@ export const WorkoutSessionApi = {
   },
   updateSetLog: async (
     setId: number,
-    plannedReps: number,
-    weight: number | null,
+    plannedReps?: number,
+    weight?: number | null,
     reps?: number,
     dropSets?: HydratedExercise['sets'][number]['dropSets'],
     plannedDurationSeconds?: number | null,
     durationSeconds?: number | null,
     completed?: number,
+    completedAt?: string | null,
   ) => {
     await updateCoreSetLog(setId, {
       planned_reps: plannedReps,
@@ -175,6 +177,7 @@ export const WorkoutSessionApi = {
       planned_duration_seconds: plannedDurationSeconds,
       duration_seconds: durationSeconds,
       completed,
+      completed_at: completedAt,
     });
     return {
       setId,
@@ -185,6 +188,7 @@ export const WorkoutSessionApi = {
       plannedDurationSeconds,
       durationSeconds,
       completed,
+      completedAt,
     };
   },
   updateSetLogStatus: async (

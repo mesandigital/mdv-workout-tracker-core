@@ -23,6 +23,8 @@ type AddSetLogInput = {
   plannedReps: number;
   weight?: number | null;
   completed: number;
+  completedAt?: string | null;
+  completed_at?: string | null;
   dropSets?: UpdateSetRowInput['dropSets'];
   plannedDurationSeconds?: number | null;
   roundNumber?: number | null;
@@ -44,6 +46,8 @@ type UpdateSetRowInput = {
   plannedDurationSeconds?: number | null;
   durationSeconds?: number | null;
   completed?: number;
+  completedAt?: string | null;
+  completed_at?: string | null;
 };
 
 type UpdateCompletedRepInput = {
@@ -273,6 +277,7 @@ export function createWorkoutTrackerCoreAdapter(
                 planned_reps: input.plannedReps,
                 weight: input.weight,
                 completed: input.completed,
+                completed_at: input.completedAt ?? input.completed_at ?? null,
                 drop_sets: input.dropSets,
                 planned_duration_seconds: input.plannedDurationSeconds,
                 round_number: input.roundNumber,
@@ -303,6 +308,7 @@ export function createWorkoutTrackerCoreAdapter(
                 planned_duration_seconds: input.plannedDurationSeconds,
                 duration_seconds: input.durationSeconds,
                 completed: input.completed,
+                completed_at: input.completedAt ?? input.completed_at ?? null,
               }),
             );
           },

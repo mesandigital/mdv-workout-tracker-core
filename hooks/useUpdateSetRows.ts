@@ -22,8 +22,8 @@ export function useUpdateSetRows(sessionId: number) {
         // Update set_log (set row)
         return WorkoutSessionApi.updateSetLog(
           params.setId,
-          params.plannedReps ?? 0,
-          params.weight ?? null,
+          params.plannedReps,
+          params.weight,
           params.reps,
           params.dropSets,
           params.plannedDurationSeconds,

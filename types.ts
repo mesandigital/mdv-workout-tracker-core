@@ -145,6 +145,7 @@ export type WorkoutTemplateExerciseInput = {
   weight?: number | null;
   rest_seconds?: number | null;
   section?: string | null;
+  per_side?: boolean | number | null;
   superset_id?: number | null;
   group_id?: number | null;
   group_type?: WorkoutGroupType | null;
@@ -276,6 +277,8 @@ export type SetLogInput = {
   reps?: number | null;
   weight?: number | null;
   completed?: number;
+  completed_at?: string | null;
+  completedAt?: string | null;
   drop_sets?: WorkoutDropSetInput[];
   round_number?: number | null;
   planned_duration_seconds?: number | null;
@@ -292,6 +295,7 @@ export type HydratedSessionExercise = {
   weight?: number | null;
   restSeconds?: number | null;
   section?: string | null;
+  perSide?: boolean | null;
   blockId?: number | null;
   blockType?: WorkoutBlockType | null;
   blockName?: string | null;
@@ -311,6 +315,8 @@ export type HydratedSessionExercise = {
     reps: number | null;
     weight: number | null;
     completed: number;
+    completedAt?: string | null;
+    completed_at?: string | null;
     lastWeight?: number | null;
     lastReps?: number | null;
     lastPlannedReps?: number | null;
@@ -353,6 +359,8 @@ export type Set = {
   durationSeconds?: number | null;
   dropSets?: WorkoutDropSetInput[];
   completed: number;
+  completedAt?: string | null;
+  completed_at?: string | null;
 };
 
 export type ExerciseRow = {

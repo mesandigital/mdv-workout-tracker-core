@@ -43,6 +43,69 @@ const parseJsonArray = (value: unknown) => {
   }
 };
 
+const parseTimestampMs = (value?: string | null) => {
+  if (!value) return null;
+  const normalized = value.includes('T')
+    ? value
+    : `${value.replace(' ', 'T')}Z`;
+  const time = new Date(normalized).getTime();
+  return Number.isFinite(time) ? time : null;
+};
+
+const getEffectiveSessionDuration = async (
+  sessionId: number,
+  finishedAt: string,
+  fallbackDuration?: number,
+) => {
+  const row = await selectRawOne<{
+    started_at: string;
+    latest_completed_at: string | null;
+  }>(
+    `
+    SELECT
+      ws.started_at,
+      MAX(sl.completed_at) as latest_completed_at
+    FROM workout_sessions ws
+    LEFT JOIN exercise_logs el ON el.workout_session_id = ws.id
+    LEFT JOIN set_logs sl
+      ON sl.exercise_log_id = el.id
+      AND sl.completed_at IS NOT NULL
+      AND COALESCE(sl.completed, 0) = 1
+    WHERE ws.id = ?
+    GROUP BY ws.id
+    `,
+    [sessionId],
+  );
+  const startedAtMs = parseTimestampMs(row?.started_at);
+  const completedAtMs = parseTimestampMs(row?.latest_completed_at);
+  const finishedAtMs = parseTimestampMs(finishedAt);
+
+  if (
+    startedAtMs !== null &&
+    completedAtMs !== null &&
+    completedAtMs >= startedAtMs
+  ) {
+    return Math.max(0, Math.floor((completedAtMs - startedAtMs) / 1000));
+  }
+
+  if (
+    typeof fallbackDuration === 'number' &&
+    Number.isFinite(fallbackDuration)
+  ) {
+    return Math.max(0, Math.floor(fallbackDuration));
+  }
+
+  if (
+    startedAtMs !== null &&
+    finishedAtMs !== null &&
+    finishedAtMs >= startedAtMs
+  ) {
+    return Math.max(0, Math.floor((finishedAtMs - startedAtMs) / 1000));
+  }
+
+  return undefined;
+};
+
 const createSessionDropSets = (value: unknown) =>
   parseJsonArray(value).map((drop: any) => {
     if (drop.plannedReps !== undefined || drop.plannedWeight !== undefined)
@@ -163,6 +226,7 @@ export async function generateExerciseLogsAndSets(
           : exercise.default_sets,
       planned_reps: exercise.default_reps,
       weight: exerciseWeight,
+      per_side: exercise.per_side ? 1 : 0,
       rest_seconds: exercise.rest_seconds ?? null,
       source: 'template',
       section: exercise.section || 'main',
@@ -419,6 +483,7 @@ export async function getHydratedWorkoutSession(
       el.weight,
       el.rest_seconds as restSeconds,
       el.section,
+      el.per_side as perSide,
       el.order_index as orderIndex,
       el.superset_id as supersetId,
       el.group_id as groupId,
@@ -492,6 +557,7 @@ export async function getHydratedWorkoutSession(
         reps,
         weight,
         completed,
+        completed_at as completedAt,
         drop_sets as dropSets
       FROM set_logs
       WHERE exercise_log_id = ?
@@ -545,6 +611,9 @@ export async function listWorkoutSessions(workoutId?: number) {
 }
 
 export async function addSetLog(input: SetLogInput) {
+  const timestamp = new Date().toISOString();
+  const completed = input.completed ?? 0;
+
   return insert('set_logs', {
     exercise_log_id: input.exercise_log_id,
     set_number: input.set_number,
@@ -554,7 +623,8 @@ export async function addSetLog(input: SetLogInput) {
     duration_seconds: input.duration_seconds ?? null,
     reps: input.reps ?? null,
     weight: input.weight ?? null,
-    completed: input.completed ?? 0,
+    completed,
+    completed_at: completed ? input.completed_at ?? timestamp : null,
     drop_sets: JSON.stringify(input.drop_sets || []),
   });
 }
@@ -665,6 +735,14 @@ export async function convertWorkoutSessionBlockToStandalone(
 }
 
 export async function updateSetLog(setId: number, input: Partial<SetLogInput>) {
+  const timestamp = new Date().toISOString();
+  const completedAt =
+    input.completed === undefined
+      ? undefined
+      : input.completed
+      ? input.completed_at ?? timestamp
+      : null;
+
   await updateWhere(
     'set_logs',
     {
@@ -672,10 +750,11 @@ export async function updateSetLog(setId: number, input: Partial<SetLogInput>) {
       reps: input.reps,
       weight: input.weight,
       completed: input.completed,
+      completed_at: completedAt,
       planned_duration_seconds: input.planned_duration_seconds,
       duration_seconds: input.duration_seconds,
       drop_sets: input.drop_sets ? JSON.stringify(input.drop_sets) : undefined,
-      updated_at: new Date().toISOString(),
+      updated_at: timestamp,
     },
     'id = ?',
     [setId],
@@ -687,12 +766,16 @@ export async function deleteSetLog(setId: number) {
 }
 
 export async function setCompletedReps(setId: number, reps: number | null) {
+  const timestamp = new Date().toISOString();
+  const completed = reps === null ? 0 : 1;
+
   await updateWhere(
     'set_logs',
     {
       reps,
-      completed: reps === null ? 0 : 1,
-      updated_at: new Date().toISOString(),
+      completed,
+      completed_at: completed ? timestamp : null,
+      updated_at: timestamp,
     },
     'id = ?',
     [setId],
@@ -743,12 +826,18 @@ export async function endWorkoutSession(
   finishedAt = new Date().toISOString(),
   duration?: number,
 ) {
+  const effectiveDuration = await getEffectiveSessionDuration(
+    sessionId,
+    finishedAt,
+    duration,
+  );
+
   await updateWhere(
     'workout_sessions',
     {
       finished_at: finishedAt,
       notes: notes || null,
-      duration,
+      duration: effectiveDuration,
       updated_at: new Date().toISOString(),
     },
     'id = ?',
