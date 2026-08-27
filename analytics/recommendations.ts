@@ -1,5 +1,9 @@
 import { getMostRelevantExerciseGap } from '../sessions/utils/getMostRelevantExerciseGap';
-import { getPlateauCandidates } from '../sessions/utils/plateauDetection';
+import {
+  computePerformanceScore,
+  getPlateauCandidates,
+  type PlateauSession,
+} from '../sessions/utils/plateauDetection';
 
 function getCurrentWeekNumber(referenceDate: Date = new Date()) {
   const date = new Date(referenceDate);
@@ -55,6 +59,23 @@ export type ExerciseGapInput = {
 
 export type ExerciseGapResult = ReturnType<typeof getMostRelevantExerciseGap>;
 
+export type PlateauWorkoutLog = {
+  startedAt?: string;
+  started_at?: string;
+  exercises?: Array<{
+    exerciseId?: number;
+    exercise_id?: number;
+    exerciseName?: string;
+    exercise_name?: string;
+    name?: string;
+    primaryMuscle?: string | null;
+    primary_muscle?: string | null;
+    secondaryMuscles?: string | string[] | null;
+    secondary_muscles?: string | string[] | null;
+    sets?: PlateauSession['sets'];
+  }>;
+};
+
 export type MusclePlateauInsight = Record<
   string,
   {
@@ -108,9 +129,60 @@ export function getSmartSlotExerciseGap(
 
 export function getSmartSlotExercisePlateaus(
   allExercises: Array<{ id: number; name: string }> = [],
-  sessionsByExercise: Record<number, Array<{ date: string | Date; sets: { weight: number; reps: number }[] }>> = {},
+  sessionsByExercise: Record<number, PlateauSession[]> = {},
 ) {
   return getPlateauCandidates(allExercises, sessionsByExercise);
+}
+
+function parseSecondaryMuscles(
+  value: string | string[] | null | undefined,
+): string[] {
+  if (!value) return [];
+  if (Array.isArray(value)) return value;
+  try {
+    const parsed = JSON.parse(value);
+    if (Array.isArray(parsed)) {
+      return parsed.filter((muscle): muscle is string =>
+        typeof muscle === 'string',
+      );
+    }
+  } catch {
+    // Older records may contain comma-separated values.
+  }
+  return value.split(',').map(muscle => muscle.trim()).filter(Boolean);
+}
+
+/**
+ * Converts application workout logs into canonical core plateau inputs.
+ * Detection functions remain responsible for completion filtering, sorting,
+ * continuity rules, and score calculation.
+ */
+export function buildPlateauDetectionInputs(logs: PlateauWorkoutLog[] = []) {
+  const exerciseMap: Record<number, { id: number; name: string }> = {};
+  const sessionsByExercise: Record<number, PlateauSession[]> = {};
+
+  logs.forEach(session => {
+    const date = session.startedAt || session.started_at;
+    if (!date || Number.isNaN(new Date(date).getTime())) return;
+    (session.exercises || []).forEach(exercise => {
+      const exerciseId = exercise.exerciseId || exercise.exercise_id;
+      const name =
+        exercise.name || exercise.exerciseName || exercise.exercise_name;
+      if (!exerciseId || !name) return;
+      if (!sessionsByExercise[exerciseId]) sessionsByExercise[exerciseId] = [];
+      sessionsByExercise[exerciseId].push({
+        date,
+        sets: exercise.sets || [],
+      });
+      exerciseMap[exerciseId] = { id: exerciseId, name };
+    });
+  });
+
+  return {
+    exercisePlateauCandidates: Object.values(exerciseMap),
+    sessionsByExercise,
+    muscleSessions: logs,
+  };
 }
 
 export function getSmartSlotMusclePlateaus(
@@ -130,36 +202,52 @@ export function getSmartSlotMusclePlateaus(
   const musclePRs: Record<string, number> = {};
   const muscleExercises: Record<string, Set<string>> = {};
 
-  sessions.forEach(session => {
+  const sortedSessions = [...sessions].sort((first, second) => {
+    const firstDate = first.startedAt || first.started_at || '';
+    const secondDate = second.startedAt || second.started_at || '';
+    return new Date(secondDate).getTime() - new Date(firstDate).getTime();
+  });
+
+  sortedSessions.forEach(session => {
     const date = session.startedAt || session.started_at;
+    if (!date || Number.isNaN(new Date(date).getTime())) return;
+    const sessionScores = new Map<
+      string,
+      { score: number; exerciseNames: Set<string> }
+    >();
+
     (session.exercises || []).forEach((exercise: any) => {
-      const sets = exercise.sets || [];
-      let perf = 0;
-      if (sets.length > 0) {
-        let filtered = sets;
-        if (sets.length > 3) {
-          const sorted = [...sets].sort((a, b) => (a.weight || 0) - (b.weight || 0));
-          const cutoff = Math.ceil(sets.length * 0.2);
-          filtered = sorted.slice(cutoff);
-        }
-        perf = Math.max(...filtered.map((set: any) => (set.weight || 0) * (set.reps || 0)));
-      }
+      const perf = computePerformanceScore(exercise.sets || []);
+      if (perf <= 0) return;
 
       const addMuscle = (muscle?: string | null, weight = 1) => {
         if (!muscle) return;
-        if (!scores[muscle]) scores[muscle] = [];
-        scores[muscle].push({ date, score: perf * weight });
-        if (!muscleDates[muscle]) muscleDates[muscle] = [];
-        muscleDates[muscle].push(date);
-        musclePRs[muscle] = Math.max(musclePRs[muscle] || 0, perf * weight);
-        if (!muscleExercises[muscle]) muscleExercises[muscle] = new Set();
-        if (exercise.name) muscleExercises[muscle].add(exercise.name);
+        const weightedScore = perf * weight;
+        const current = sessionScores.get(muscle) || {
+          score: 0,
+          exerciseNames: new Set<string>(),
+        };
+        current.score = Math.max(current.score, weightedScore);
+        const exerciseName =
+          exercise.name || exercise.exerciseName || exercise.exercise_name;
+        if (exerciseName) current.exerciseNames.add(exerciseName);
+        sessionScores.set(muscle, current);
       };
 
-      addMuscle(exercise.primaryMuscle, 1);
-      if (Array.isArray(exercise.secondaryMuscles)) {
-        exercise.secondaryMuscles.forEach((muscle: string) => addMuscle(muscle, secondaryWeight));
-      }
+      addMuscle(exercise.primaryMuscle || exercise.primary_muscle, 1);
+      parseSecondaryMuscles(
+        exercise.secondaryMuscles || exercise.secondary_muscles,
+      ).forEach(muscle => addMuscle(muscle, secondaryWeight));
+    });
+
+    sessionScores.forEach(({ score, exerciseNames }, muscle) => {
+      if (!scores[muscle]) scores[muscle] = [];
+      scores[muscle].push({ date, score });
+      if (!muscleDates[muscle]) muscleDates[muscle] = [];
+      muscleDates[muscle].push(date);
+      musclePRs[muscle] = Math.max(musclePRs[muscle] || 0, score);
+      if (!muscleExercises[muscle]) muscleExercises[muscle] = new Set();
+      exerciseNames.forEach(name => muscleExercises[muscle].add(name));
     });
   });
 
@@ -210,7 +298,7 @@ export function buildSmartSlotRecommendations(input: {
   gapExercises?: ExerciseGapInput[];
   gapCooldowns?: Record<string, number>;
   exercisePlateauCandidates?: Array<{ id: number; name: string }>;
-  sessionsByExercise?: Record<number, Array<{ date: string | Date; sets: { weight: number; reps: number }[] }>>;
+  sessionsByExercise?: Record<number, PlateauSession[]>;
   muscleSessions?: any[];
   musclePlateauOptions?: { minSessions?: number; tolerance?: number; secondaryWeight?: number };
 }) {

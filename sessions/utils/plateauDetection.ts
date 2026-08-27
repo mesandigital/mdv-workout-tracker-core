@@ -51,17 +51,40 @@ export interface PlateauResult {
   score?: number;
 }
 
+export type PlateauSet = {
+  weight?: number | null;
+  reps?: number | null;
+  completed?: number | boolean | null;
+};
+
+export type PlateauSession = {
+  date: string | Date;
+  sets: PlateauSet[];
+};
+
+function getPerformanceSets(sets: PlateauSet[] = []) {
+  const hasCompletionState = sets.some(set => set.completed != null);
+  return sets
+    .filter(
+      set =>
+        !hasCompletionState || set.completed === 1 || set.completed === true,
+    )
+    .map(set => ({ weight: set.weight ?? 0, reps: set.reps ?? 0 }))
+    .filter(set => set.weight > 0 && set.reps > 0);
+}
+
 /**
  * Compute performance score for a session: max(weight * reps) across all sets
  * Optionally filter out warm-up sets (lowest 20% weights)
  */
-export function computePerformanceScore(sets: { weight: number; reps: number }[]): number {
-  if (!sets || sets.length === 0) return 0;
+export function computePerformanceScore(sets: PlateauSet[]): number {
+  const completedSets = getPerformanceSets(sets);
+  if (completedSets.length === 0) return 0;
   // Filter out warm-up sets: remove lowest 20% weights if more than 3 sets
-  let filtered = sets;
-  if (sets.length > 3) {
-    const sorted = [...sets].sort((a, b) => a.weight - b.weight);
-    const cutoff = Math.ceil(sets.length * 0.2);
+  let filtered = completedSets;
+  if (completedSets.length > 3) {
+    const sorted = [...completedSets].sort((a, b) => a.weight - b.weight);
+    const cutoff = Math.ceil(completedSets.length * 0.2);
     filtered = sorted.slice(cutoff);
   }
   return Math.max(...filtered.map(s => (s.weight || 0) * (s.reps || 0)));
@@ -76,7 +99,7 @@ export function computePerformanceScore(sets: { weight: number; reps: number }[]
 export function detectPlateauForExercise(
   exerciseId: number,
   exerciseName: string,
-  sessions: Array<{ date: string | Date; sets: { weight: number; reps: number }[] }>
+  sessions: PlateauSession[],
 ): PlateauResult | null {
 
   if (!sessions || sessions.length < 3) return null;
@@ -178,14 +201,14 @@ export function detectPlateauForExercise(
  */
 export function getPlateauCandidate(
   allExercises: Array<{ id: number; name: string }>,
-  sessionsByExercise: Record<number, Array<{ date: string | Date; sets: { weight: number; reps: number }[] }>>
+  sessionsByExercise: Record<number, PlateauSession[]>,
 ): PlateauResult | null {
   return getPlateauCandidates(allExercises, sessionsByExercise)[0] ?? null;
 }
 
 export function getPlateauCandidates(
   allExercises: Array<{ id: number; name: string }>,
-  sessionsByExercise: Record<number, Array<{ date: string | Date; sets: { weight: number; reps: number }[] }>>
+  sessionsByExercise: Record<number, PlateauSession[]>,
 ): PlateauResult[] {
   const candidates: PlateauResult[] = [];
 
