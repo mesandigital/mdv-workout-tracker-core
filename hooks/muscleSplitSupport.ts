@@ -43,6 +43,8 @@ const WEEKLY_TARGETS: Record<string, number> = {
 };
 
 const MUSCLE_TARGET_ALIASES: Record<string, string> = {
+  abs: 'core',
+  abdominals: 'core',
   chest: 'pectorals',
   deltoids: 'shoulders',
   gluteal: 'glutes',
@@ -55,7 +57,16 @@ const MUSCLE_TARGET_ALIASES: Record<string, string> = {
 };
 
 export const MUSCLE_FAMILIES = [
-  ['deltoids', 'shoulders', 'delts', 'anterior-deltoid', 'lateral-deltoid', 'posterior-deltoid', 'rear-delt'],
+  ['core', 'abs', 'abdominals'],
+  [
+    'deltoids',
+    'shoulders',
+    'delts',
+    'anterior-deltoid',
+    'lateral-deltoid',
+    'posterior-deltoid',
+    'rear-delt',
+  ],
   ['triceps'],
   ['trapezius', 'traps'],
   ['upper-back', 'upperback', 'middle-back', 'lats', 'back'],
@@ -68,7 +79,7 @@ export const MUSCLE_FAMILIES = [
 ];
 
 export const MUSCLE_PREFERENCE_MUSCLES = [
-  'abs',
+  'core',
   'adductors',
   'ankles',
   'biceps',
@@ -140,7 +151,10 @@ const GROUP_MAP: Record<string, 'upper' | 'lower' | 'core'> = {
 };
 
 export const normalizeMuscleTargetKey = (muscle?: string | null) =>
-  String(muscle || '').trim().toLowerCase().replace(/[\s_]+/g, '-');
+  String(muscle || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[\s_]+/g, '-');
 
 export const getDefaultMuscleTarget = (muscle: string) => {
   const key = MUSCLE_TARGET_ALIASES[muscle] || muscle;
@@ -158,7 +172,9 @@ const getCompletedSets = (exercise: any) => {
       return exercise.sets.filter((set: any) => set.completed).length;
     }
     if (Array.isArray(exercise.reps)) {
-      return exercise.reps.filter((reps: any) => typeof reps === 'number' && reps > 0).length;
+      return exercise.reps.filter(
+        (reps: any) => typeof reps === 'number' && reps > 0,
+      ).length;
     }
     return exercise.sets.length;
   }
@@ -171,10 +187,14 @@ const getExerciseName = (exercise: any) =>
 const getPrimaryMuscle = (exercise: any) =>
   exercise.primaryMuscle ?? exercise.primary_muscle;
 const getSecondary = (exercise: any) =>
-  parseSecondaryMuscles(exercise.secondaryMuscles ?? exercise.secondary_muscles);
+  parseSecondaryMuscles(
+    exercise.secondaryMuscles ?? exercise.secondary_muscles,
+  );
 const getSessionId = (log: any) => log.session_id ?? log.sessionId ?? log.id;
-const getSessionName = (log: any) => log.name ?? log.session_name ?? log.workoutName;
-const getSessionDate = (log: any) => log.startedAt ?? log.started_at ?? log.session_date;
+const getSessionName = (log: any) =>
+  log.name ?? log.session_name ?? log.workoutName;
+const getSessionDate = (log: any) =>
+  log.startedAt ?? log.started_at ?? log.session_date;
 
 const getTotalReps = (exercise: any) => {
   if (Array.isArray(exercise.reps)) {
@@ -196,8 +216,41 @@ const getTotalReps = (exercise: any) => {
   return undefined;
 };
 
+const getExerciseTonnage = (exercise: any) => {
+  let setTonnage: number | undefined;
+  if (Array.isArray(exercise.sets)) {
+    setTonnage = exercise.sets.reduce((sum: number, set: any) => {
+      const hasCompletedField =
+        set !== null && typeof set === 'object' && 'completed' in set;
+      const completed =
+        set?.completed === true || set?.completed === 1 || !hasCompletedField;
+      if (!completed) return sum;
+
+      const weight = Number(
+        set?.weight ?? set?.planned_weight ?? exercise.weight ?? 0,
+      );
+      const reps = Number(set?.reps ?? set?.planned_reps ?? exercise.reps ?? 0);
+      return Number.isFinite(weight) && Number.isFinite(reps)
+        ? sum + weight * reps
+        : sum;
+    }, 0);
+    if (setTonnage > 0) return setTonnage;
+  }
+
+  const explicitTonnage = Number(
+    exercise.tonnage ?? exercise.totalTonnage ?? exercise.total_tonnage,
+  );
+  if (Number.isFinite(explicitTonnage)) return explicitTonnage;
+  if (setTonnage !== undefined) return setTonnage;
+
+  const weight = Number(exercise.weight ?? 0);
+  const reps = Number(getTotalReps(exercise) ?? 0);
+  return Number.isFinite(weight) && Number.isFinite(reps) ? weight * reps : 0;
+};
+
 const normalizeGroupMuscle = (muscle?: string | null) => {
   const key = normalizeMuscleTargetKey(muscle);
+  if (key === 'abs' || key === 'abdominals') return 'core';
   if (key === 'pecs' || key === 'pectorals') return 'chest';
   if (key === 'glutes') return 'gluteal';
   if (key === 'hamstrings') return 'hamstring';
@@ -254,7 +307,7 @@ const getMuscleHighlightInfo = (muscle: string) => {
         { slug: 'adductors', region: 'Front' as const },
         { slug: 'adductors', region: 'Back' as const },
       ];
-    case 'abs':
+    case 'core':
       return [{ slug: 'abs', region: 'Front' as const }];
     case 'obliques':
       return [{ slug: 'obliques', region: 'Front' as const }];
@@ -288,17 +341,20 @@ export function computeMuscleSplit(logs: any[]) {
         session_name: getSessionName(log),
         primaryMuscle,
         secondaryMuscles,
-        tonnage: exercise.tonnage,
+        tonnage: getExerciseTonnage(exercise),
         total_reps: getTotalReps(exercise),
         total_sets: setCount,
       };
 
       if (primaryMuscle) {
         muscleSplit[primaryMuscle] = (muscleSplit[primaryMuscle] || 0) + 1;
-        primaryMuscleCount[primaryMuscle] = (primaryMuscleCount[primaryMuscle] || 0) + 1;
-        if (!muscleSplitEx[primaryMuscle]) muscleSplitEx[primaryMuscle] = new Set();
+        primaryMuscleCount[primaryMuscle] =
+          (primaryMuscleCount[primaryMuscle] || 0) + 1;
+        if (!muscleSplitEx[primaryMuscle])
+          muscleSplitEx[primaryMuscle] = new Set();
         if (exerciseName) muscleSplitEx[primaryMuscle].add(exerciseName);
-        if (!muscleExerciseLog[primaryMuscle]) muscleExerciseLog[primaryMuscle] = [];
+        if (!muscleExerciseLog[primaryMuscle])
+          muscleExerciseLog[primaryMuscle] = [];
         muscleExerciseLog[primaryMuscle].push(logEntry);
       }
 
@@ -318,10 +374,14 @@ export function computeMuscleSplit(logs: any[]) {
   Object.keys(muscleSplitEx).forEach(key => {
     muscleSplitExArr[key] = Array.from(muscleSplitEx[key]);
   });
-  const totalMuscle = Object.values(muscleSplit).reduce((sum, count) => sum + count, 0);
+  const totalMuscle = Object.values(muscleSplit).reduce(
+    (sum, count) => sum + count,
+    0,
+  );
   Object.keys(muscleSplit).forEach(key => {
     muscleSplit[key] = totalMuscle ? (muscleSplit[key] / totalMuscle) * 100 : 0;
-    muscleSetCount[key] = (primaryMuscleCount[key] || 0) + (secondaryMuscleCount[key] || 0);
+    muscleSetCount[key] =
+      (primaryMuscleCount[key] || 0) + (secondaryMuscleCount[key] || 0);
   });
 
   return {
@@ -362,7 +422,10 @@ export function buildMuscleFocusSummary({
   const trackedByKey = new Map(
     trackedMuscles.map(muscle => [normalizeMuscleTargetKey(muscle), muscle]),
   );
-  const summary = new Map<string, { muscle: string; count: number; exercises_info: any[] }>();
+  const summary = new Map<
+    string,
+    { muscle: string; count: number; exercises_info: any[] }
+  >();
 
   trackedMuscles.forEach(muscle =>
     summary.set(normalizeMuscleTargetKey(muscle), {
@@ -419,13 +482,14 @@ export function buildMuscleFocusRows({
     periodMode === 'month' && startDate && endDate
       ? Math.max(
           1,
-          (Math.max(
+          Math.max(
             1,
             Math.floor(
-              ((Math.min(endDate.getTime(), now.getTime()) - startDate.getTime()) /
-                86400000),
+              (Math.min(endDate.getTime(), now.getTime()) -
+                startDate.getTime()) /
+                86400000,
             ) + 1,
-          )) / 7,
+          ) / 7,
         )
       : 1;
 
@@ -443,10 +507,14 @@ export function buildMuscleFocusRows({
 
   return merged.map(item => {
     const muscleKey = normalizeMuscleTargetKey(item.muscle);
-    const targetKey = normalizeMuscleTargetKey(targetAliases[muscleKey] || muscleKey);
-    const aggregateTargets = targetAggregates[targetKey]?.map(normalizeMuscleTargetKey) || [];
+    const targetKey = normalizeMuscleTargetKey(
+      targetAliases[muscleKey] || muscleKey,
+    );
+    const aggregateTargets =
+      targetAggregates[targetKey]?.map(normalizeMuscleTargetKey) || [];
     const aggregateTarget = aggregateTargets.reduce(
-      (sum, muscle) => sum + (weeklyTargets[muscle] ?? defaultWeeklyTargets[muscle] ?? 0),
+      (sum, muscle) =>
+        sum + (weeklyTargets[muscle] ?? defaultWeeklyTargets[muscle] ?? 0),
       0,
     );
     const weeklyTarget = Math.max(
@@ -459,9 +527,12 @@ export function buildMuscleFocusRows({
         0,
     );
     const weeklyAverage =
-      periodMode === 'month' ? item.completedSets / weekDivisor : item.completedSets;
+      periodMode === 'month'
+        ? item.completedSets / weekDivisor
+        : item.completedSets;
     const comparisonSets = Number(weeklyAverage.toFixed(1));
-    const progressPercent = weeklyTarget > 0 ? (comparisonSets / weeklyTarget) * 100 : 0;
+    const progressPercent =
+      weeklyTarget > 0 ? (comparisonSets / weeklyTarget) * 100 : 0;
     const intensity: 1 | 2 | 3 =
       progressPercent >= 100 ? 3 : progressPercent >= 50 ? 2 : 1;
 
@@ -482,7 +553,10 @@ export function buildMuscleFocusSplit(
 ) {
   const totalSets = rows.reduce((sum, row) => sum + row.completedSets, 0);
   return Object.fromEntries(
-    rows.map(row => [row.muscle, totalSets > 0 ? (row.completedSets / totalSets) * 100 : 0]),
+    rows.map(row => [
+      row.muscle,
+      totalSets > 0 ? (row.completedSets / totalSets) * 100 : 0,
+    ]),
   );
 }
 
@@ -521,7 +595,8 @@ export function getWeeklyMuscleRegionData({
     : Object.keys(muscleCountMap).map(muscle => {
         const count = muscleCountMap[muscle];
         const target =
-          targetOverrides[muscle] ?? getDefaultMuscleTarget(normalizeGroupMuscle(muscle));
+          targetOverrides[muscle] ??
+          getDefaultMuscleTarget(normalizeGroupMuscle(muscle));
         const progressPercent = target > 0 ? (count / target) * 100 : 0;
         return {
           muscle,

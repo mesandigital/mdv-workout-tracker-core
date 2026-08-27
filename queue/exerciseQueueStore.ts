@@ -9,6 +9,7 @@ export type ExerciseQueueSource =
   | 'recovery'
   | 'today_focus'
   | 'workout_generator'
+  | 'muscle_match'
   | 'session';
 
 export type ExerciseQueueItem = {
