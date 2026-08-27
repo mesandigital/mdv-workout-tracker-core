@@ -428,6 +428,7 @@ const MIGRATION_COLUMNS: Record<string, Array<[string, string]>> = {
     ['planned_duration_seconds', 'INTEGER'],
     ['duration_seconds', 'INTEGER'],
     ['drop_sets', 'TEXT'],
+    ['completed_at', 'TEXT'],
     ['deleted', 'INTEGER DEFAULT 0'],
     ['synced', 'INTEGER DEFAULT 0'],
     ['version', 'INTEGER DEFAULT 1'],
